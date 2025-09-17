@@ -1,0 +1,176 @@
+# CLAUDE.md — Project Contract with Persistent Memory
+
+**Acknowledgment**: Contract loaded. Using Chroma project_memory.
+
+## 🧠 Project Memory (Chroma) - AUTO-INITIALIZE
+
+At session start, ALWAYS:
+1. Try to query the collection first
+2. If collection doesn't exist, create it:
+   ```
+   mcp__chroma__chroma_create_collection {
+     "collection_name": "project_memory",
+     "embedding_function_name": "default"
+   }
+   ```
+3. Log initial memory if new:
+   ```
+   mcp__chroma__chroma_add_documents {
+     "collection_name": "project_memory",
+     "documents": ["PROJECT_NAME: Your project description here (under 300 chars)"],
+     "metadatas": [{"type": "decision", "tags": "setup,init", "source": "init"}],
+     "ids": ["project-init"]
+   }
+   ```
+4. After decisions/fixes, log: documents (≤300 chars), metadatas {type, tags, source}, ids stable
+5. Always echo: `Logged memory: <id>`
+
+## 📋 Memory Schema
+
+```javascript
+{
+  documents: ["Brief description under 300 chars"],
+  metadatas: [{
+    type: "decision|fix|tip|preference",
+    tags: "comma,separated,keywords",
+    source: "file|PR|spec|issue|meeting"
+  }],
+  ids: ["stable-unique-identifier"]
+}
+```
+
+## 🔍 Memory Operations
+
+### Query Before Work
+```javascript
+mcp__chroma__chroma_query_documents {
+  "collection_name": "project_memory",
+  "query_texts": ["search terms"],
+  "n_results": 5
+}
+```
+
+### Log After Confirmation
+```javascript
+mcp__chroma__chroma_add_documents {
+  "collection_name": "project_memory",
+  "documents": ["Decision or fix description"],
+  "metadatas": [{"type": "decision", "tags": "relevant,tags", "source": "file"}],
+  "ids": ["unique-id-for-updates"]
+}
+```
+
+## 📝 Auto-Log Triggers
+
+Automatically log memory when:
+- Architecture decisions are confirmed
+- Bug fixes are implemented
+- Workflow preferences established
+- Configuration changes made
+- Performance optimizations applied
+- Security measures implemented
+
+## 🎯 Project-Specific Configuration
+
+**Project**: PROJECT_NAME_PLACEHOLDER
+**Description**: PROJECT_DESCRIPTION_PLACEHOLDER
+**Primary Language**: LANGUAGE_PLACEHOLDER
+**Framework**: FRAMEWORK_PLACEHOLDER
+
+## 🛠️ Tool Preferences
+
+| Task | Preferred Tool |
+|------|---------------|
+| Multi-file edits | MultiEdit > sequential Edits |
+| Pattern search | Grep > bash grep |
+| Complex analysis | Sequential-thinking |
+| File operations | Read before Write/Edit |
+
+## ✅ Quality Standards
+
+- Test before marking complete
+- Run linters and type checkers
+- Validate changes work as expected
+- Document significant decisions
+
+## 🚀 Workflow
+
+1. **Session Start**: Auto-initialize Chroma → Query existing memories
+2. **Before Work**: Search memories for related decisions
+3. **During Work**: Follow established patterns
+4. **After Confirmation**: Log new decisions/fixes
+5. **Session End**: Memories persist automatically
+
+## 📊 Memory Examples
+
+```javascript
+// Architecture decision
+{
+  documents: ["Use MVC pattern for API endpoints"],
+  metadatas: [{"type": "decision", "tags": "architecture,api,mvc", "source": "spec"}],
+  ids: ["api-architecture"]
+}
+
+// Bug fix
+{
+  documents: ["Fixed null pointer in auth by adding validation"],
+  metadatas: [{"type": "fix", "tags": "auth,bug,validation", "source": "issue#123"}],
+  ids: ["auth-null-fix"]
+}
+
+// Team preference
+{
+  documents: ["Team prefers tabs over spaces, 2-space indent"],
+  metadatas: [{"type": "preference", "tags": "formatting,style", "source": "team"}],
+  ids: ["code-style-pref"]
+}
+```
+
+## 🔄 Session Continuity
+
+When resuming work:
+1. Query recent memories: `where: {"type": {"$in": ["decision", "fix"]}}`
+2. Check for incomplete tasks
+3. Review last session's decisions
+4. Continue with context preserved
+
+## ⚠️ Important Notes
+
+- **Stable IDs**: Use consistent IDs to update existing memories
+- **Concise Documents**: Keep under 300 characters
+- **Rich Tags**: Enable better search and categorization
+- **Source Tracking**: Always indicate where decisions came from
+
+## 🎮 Quick Commands
+
+```bash
+# View all memories
+mcp__chroma__chroma_get_documents {
+  "collection_name": "project_memory"
+}
+
+# Search specific type
+mcp__chroma__chroma_query_documents {
+  "collection_name": "project_memory",
+  "query_texts": ["authentication"],
+  "where": {"type": {"$eq": "decision"}}
+}
+
+# Update existing memory
+mcp__chroma__chroma_add_documents {
+  "collection_name": "project_memory",
+  "documents": ["Updated description"],
+  "metadatas": [{"type": "decision", "tags": "updated", "source": "review"}],
+  "ids": ["existing-id"]  # Same ID updates instead of duplicates
+}
+```
+
+## 🏁 Activation
+
+This file loads automatically when Claude opens the project.
+Memory system initializes on first query attempt.
+All memories persist across sessions.
+
+---
+
+*Powered by ChromaDB MCP Server for persistent project memory*

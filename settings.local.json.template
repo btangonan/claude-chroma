@@ -1,0 +1,47 @@
+{
+  "mcpServers": {
+    "chromadb": {
+      "enabled": true,
+      "priority": 1,
+      "autoConnect": true,
+      "description": "ChromaDB for persistent project memory across sessions"
+    }
+  },
+  "projectSettings": {
+    "memory": {
+      "enabled": true,
+      "collection": "project_memory",
+      "autoInit": true,
+      "logConfirmation": true,
+      "queryBeforePropose": true
+    },
+    "logging": {
+      "memoryOperations": true,
+      "echoMemoryId": true,
+      "verbosity": "normal"
+    }
+  },
+  "tools": {
+    "preferences": {
+      "multiFileEdits": "MultiEdit",
+      "search": "Grep",
+      "analysis": "Sequential-thinking",
+      "fileOps": "ReadBeforeWrite"
+    },
+    "autoEnable": [
+      "mcp__chroma__*"
+    ]
+  },
+  "workflow": {
+    "autoInitMemory": true,
+    "queryHistoryOnStart": true,
+    "logDecisionsAfterConfirm": true,
+    "preserveContext": true
+  },
+  "customization": {
+    "projectName": "PROJECT_NAME_PLACEHOLDER",
+    "projectType": "PROJECT_TYPE_PLACEHOLDER",
+    "primaryLanguage": "LANGUAGE_PLACEHOLDER",
+    "framework": "FRAMEWORK_PLACEHOLDER"
+  }
+}
