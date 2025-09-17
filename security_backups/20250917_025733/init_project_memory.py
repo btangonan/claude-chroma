@@ -21,43 +21,6 @@ except ImportError:
     CHROMADB_AVAILABLE = False
     print("Warning: chromadb not installed. Install with: pip install chromadb")
 
-# Security validation functions
-def validate_path_safe(file_path: str, base_dir: Path) -> bool:
-    """Validate that file_path is safe and within base_dir"""
-    try:
-        # Resolve paths to prevent directory traversal
-        abs_base = base_dir.resolve()
-        abs_path = (base_dir / file_path).resolve()
-
-        # Check if path is within base directory
-        if not str(abs_path).startswith(str(abs_base)):
-            print(f"Error: Path '{file_path}' is outside project directory")
-            return False
-
-        # Check for suspicious path components
-        suspicious = ['..', '~', '$', '`']
-        if any(sus in file_path for sus in suspicious):
-            print(f"Error: Path '{file_path}' contains suspicious characters")
-            return False
-
-        return True
-    except (ValueError, OSError) as e:
-        print(f"Error: Invalid path '{file_path}': {e}")
-        return False
-
-def safe_read_file(file_path: Path, max_size: int = 10 * 1024 * 1024) -> str:
-    """Safely read file with size limits"""
-    try:
-        # Check file size before reading
-        if file_path.stat().st_size > max_size:
-            raise ValueError(f"File too large: {file_path.stat().st_size} bytes (max: {max_size})")
-
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except Exception as e:
-        print(f"Error reading file '{file_path}': {e}")
-        raise
-
 # Configuration
 COLLECTION_NAME = "project_memory"
 DATA_DIR = ".chroma"  # Matches stdio MCP configuration
@@ -195,7 +158,7 @@ class ProjectMemoryInitializer:
 
     def import_existing_decisions(self, decisions_file: Optional[str] = None):
         """Import existing project decisions from a file"""
-        if decisions_file and validate_path_safe(decisions_file, self.project_path) and Path(decisions_file).exists():
+        if decisions_file and Path(decisions_file).exists():
             import_path = Path(decisions_file)
         else:
             # Look for common documentation files
@@ -221,7 +184,8 @@ class ProjectMemoryInitializer:
 
         # Parse and import decisions (simplified example)
         try:
-            content = safe_read_file(import_path)
+            with open(import_path, 'r') as f:
+                content = f.read()
 
             # Simple extraction of decisions (customize based on format)
             lines = content.split('\n')
@@ -294,11 +258,6 @@ class ProjectMemoryInitializer:
 
     def export_memories(self, output_file: str = "memories_export.json"):
         """Export all memories to a JSON file"""
-        # Validate output path for security
-        if not validate_path_safe(output_file, self.project_path):
-            print(f"{RED}❌ Invalid output file path: {output_file}{NC}")
-            return
-
         if not self.collection:
             return
 

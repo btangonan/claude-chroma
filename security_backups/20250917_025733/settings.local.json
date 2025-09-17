@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo create:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(rm:*)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(shellcheck:*)",
+      "Bash(bash:*)",
+      "Bash(grep:*)",
+      "Bash(command:*)",
+      "Bash(python3:*)",
+      "Bash(uvx:*)",
+      "Bash(uvx list:*)",
+      "Read(//Users/bradleytangonan/Desktop/my apps/test/**)",
+      "Bash(jq:*)",
+      "Bash(chmod:*)",
+      "Read(//Users/bradleytangonan/Desktop/my apps/**)",
+      "Bash(git add:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit:*)",
+      "Bash(./claude-chroma.sh:*)",
+      "Read(//Users/bradleytangonan/Desktop/**)",
+      "mcp__github__get_me",
+      "Bash(git remote set-url:*)",
+      "Bash(echo \"Backups created in $BACKUP_DIR\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

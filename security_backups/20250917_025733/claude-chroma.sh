@@ -58,47 +58,6 @@ print_header() {
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
 
-# Security validation functions
-validate_path() {
-    local path="$1"
-    # Allow only safe characters: alphanumeric, dots, underscores, hyphens, forward slashes
-    if [[ ! "$path" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
-        print_error "Invalid path characters detected: $path"
-        return 1
-    fi
-    return 0
-}
-
-safe_pwd() {
-    local current_dir
-    current_dir=$(pwd)
-    if validate_path "$current_dir"; then
-        echo "$current_dir"
-    else
-        print_error "Current directory path contains unsafe characters"
-        exit 1
-    fi
-}
-
-sanitize_filename() {
-    local input="$1"
-    # Remove or replace unsafe characters for filenames
-    echo "$input" | sed 's/[^a-zA-Z0-9._-]/_/g'
-}
-
-safe_timestamp() {
-    # Generate a safe timestamp for filenames
-    sanitize_filename "$(date +%Y%m%d_%H%M%S)"
-}
-
-secure_temp_file() {
-    local temp_file
-    temp_file=$(mktemp)
-    # Add to cleanup array for proper cleanup
-    CLEANUP_FILES+=("$temp_file")
-    echo "$temp_file"
-}
-
 # Prerequisite checks
 print_header "🔍 Checking Prerequisites"
 
@@ -143,10 +102,8 @@ if ! command -v uvx >/dev/null 2>&1; then
     echo "  Option 3: Using Homebrew (macOS/Linux):"
     echo "    brew install uv"
     echo ""
-    echo "  Option 4: Direct download (verify before running):"
-    echo "    curl -LsSf https://astral.sh/uv/install.sh -o uv-install.sh"
-    echo "    # Review the script content, then run:"
-    echo "    bash uv-install.sh"
+    echo "  Option 4: Direct download:"
+    echo "    curl -LsSf https://astral.sh/uv/install.sh | sh"
     echo ""
     print_info "After installing, restart your terminal and run this script again."
     echo ""
@@ -223,7 +180,7 @@ fi
 # Check if PROJECT_NAME is empty (user wants to use current directory)
 if [ -z "$PROJECT_NAME" ]; then
     # Use current directory for existing project
-    PROJECT_DIR="$(safe_pwd)"
+    PROJECT_DIR="$(pwd)"
     PROJECT_NAME="$(basename "$PROJECT_DIR")"
     print_header "🚀 Setting up ChromaDB in current directory: $PROJECT_NAME"
     print_info "Using existing project at: $PROJECT_DIR"
@@ -283,7 +240,7 @@ if [ -f ".claude/settings.local.json" ]; then
             print_info "Keeping existing ChromaDB configuration"
             SKIP_SETTINGS=true
         else
-            BACKUP_NAME=".claude/settings.local.json.backup.$(safe_timestamp)"
+            BACKUP_NAME=".claude/settings.local.json.backup.$(date +%Y%m%d_%H%M%S)"
             print_info "Backing up existing settings to $BACKUP_NAME"
             cp .claude/settings.local.json "$BACKUP_NAME"
             SKIP_SETTINGS=false
@@ -305,14 +262,14 @@ if [ -f ".claude/settings.local.json" ]; then
         if [ "$MERGE_OPTION" = "1" ]; then
             print_info "Merging ChromaDB into existing settings"
             # Create backup first
-            BACKUP_NAME=".claude/settings.local.json.backup.$(safe_timestamp)"
+            BACKUP_NAME=".claude/settings.local.json.backup.$(date +%Y%m%d_%H%M%S)"
             cp .claude/settings.local.json "$BACKUP_NAME"
             CLEANUP_FILES+=(".claude/settings.local.json")
 
             if [ "$HAS_JQ" = "true" ]; then
                 # Use jq for robust JSON merging
-                TEMP_FILE=$(secure_temp_file)
-                jq --arg uvx "$UVX_PATH" --arg dir "$(safe_pwd)/.chroma" '
+                TEMP_FILE=$(mktemp)
+                jq --arg uvx "$UVX_PATH" --arg dir "$(pwd)/.chroma" '
                   .mcpServers.chroma = {
                     "type": "stdio",
                     "command": $uvx,
@@ -345,7 +302,7 @@ if 'mcpServers' not in data:
 data['mcpServers']['chroma'] = {
     'type': 'stdio',
     'command': '$UVX_PATH',
-    'args': ['-qq','chroma-mcp','--client-type','persistent','--data-dir','$(safe_pwd)/.chroma'],
+    'args': ['-qq','chroma-mcp','--client-type','persistent','--data-dir','$(pwd)/.chroma'],
     'env': {
         'ANONYMIZED_TELEMETRY': 'FALSE',
         'PYTHONUNBUFFERED': '1',
@@ -376,7 +333,7 @@ with open('.claude/settings.local.json', 'w') as f:
             fi
             SKIP_SETTINGS=true
         else
-            BACKUP_NAME=".claude/settings.local.json.backup.$(safe_timestamp)"
+            BACKUP_NAME=".claude/settings.local.json.backup.$(date +%Y%m%d_%H%M%S)"
             print_info "Backing up to $BACKUP_NAME"
             cp .claude/settings.local.json "$BACKUP_NAME"
             SKIP_SETTINGS=false
@@ -403,7 +360,7 @@ if [ "$SKIP_SETTINGS" != "true" ]; then
         "--client-type",
         "persistent",
         "--data-dir",
-        "$(safe_pwd)/.chroma"
+        "$(pwd)/.chroma"
       ],
       "env": {
         "ANONYMIZED_TELEMETRY": "FALSE",
@@ -752,7 +709,7 @@ if [[ $SHELL_FUNCTION_REPLY =~ ^[Yy]$ ]]; then
     else
         # Create backup
         if [ -f "$SHELL_CONFIG" ]; then
-            cp "$SHELL_CONFIG" "$SHELL_CONFIG.backup.$(safe_timestamp)"
+            cp "$SHELL_CONFIG" "$SHELL_CONFIG.backup.$(date +%Y%m%d_%H%M%S)"
             print_info "Backed up existing config"
         fi
 

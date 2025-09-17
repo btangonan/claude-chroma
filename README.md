@@ -1,6 +1,10 @@
-# ChromaDB MCP Setup
+# Claude-Chroma
 
 A streamlined setup script for ChromaDB Model Context Protocol (MCP) server integration with Claude.
+
+## Purpose
+
+Claude-Chroma enables **persistent memory** for Claude Desktop projects. Instead of starting fresh every session, Claude can remember your project decisions, fixes, and preferences across conversations. This creates continuity that dramatically improves development workflows by maintaining context about your codebase, architecture choices, and project history.
 
 ## Quick Start
 
@@ -8,19 +12,17 @@ Run the setup script from any directory:
 
 ```bash
 # Basic setup (interactive mode)
-"/Users/bradleytangonan/Desktop/my apps/chromadb/claude-chroma.sh"
+./claude-chroma.sh
 
 # With project name
-"/Users/bradleytangonan/Desktop/my apps/chromadb/claude-chroma.sh" "my_project"
+./claude-chroma.sh "my_project"
 
 # Non-interactive mode (auto-yes)
-CHROMA_SETUP_YES=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/claude-chroma.sh"
+CHROMA_SETUP_YES=1 ./claude-chroma.sh
 
 # Auto-install shell function
-CHROMA_SETUP_ADD_SHELL_FN=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/claude-chroma.sh"
+CHROMA_SETUP_ADD_SHELL_FN=1 ./claude-chroma.sh
 ```
-
-Note: Quotes are required around the path due to the space in "my apps".
 
 ## Features
 
@@ -87,4 +89,4 @@ claude --mcp-config .claude/settings.local.json --model sonnet
 
 ## Repository
 
-https://github.com/btangonan/chromadb-mcp
+https://github.com/btangonan/claude-chroma
