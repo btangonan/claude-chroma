@@ -32,11 +32,8 @@ Note: Quotes are required around the path due to the space in "my apps".
 
 ## Files
 
-- `claude-chroma.sh` - Main setup script
+- `claude-chroma.sh` - Main setup script (self-contained with embedded templates)
 - `init_project_memory.py` - Initialize project memory collection
-- `quick_start.sh` - Quick setup wrapper
-- `CLAUDE.md.template` - Claude configuration template
-- `settings.local.json.template` - Settings template
 - `example_usage.md` - Usage examples and documentation
 - `troubleshooting.md` - Common issues and solutions
 - `FUTURE_IMPROVEMENTS.md` - Roadmap and enhancement ideas
@@ -48,6 +45,45 @@ Note: Quotes are required around the path due to the space in "my apps".
 - Python 3.8+
 - uv package manager
 - Claude Desktop app
+
+## Usage After Setup
+
+Once setup is complete, you have several ways to start Claude with ChromaDB:
+
+### Using the Shell Function (Recommended)
+
+If you enabled the shell function during setup:
+
+```bash
+# Start Claude with ChromaDB in current directory
+claude-chroma
+
+# Start with additional Claude arguments
+claude-chroma --help
+claude-chroma --model sonnet
+```
+
+### Direct Command
+
+```bash
+# Start Claude with ChromaDB configuration
+claude --mcp-config .claude/settings.local.json
+
+# With additional Claude arguments
+claude --mcp-config .claude/settings.local.json --model sonnet
+```
+
+### Using the Start Script
+
+```bash
+# Use the generated start script
+./start-claude-chroma.sh
+
+# With arguments
+./start-claude-chroma.sh --model sonnet
+```
+
+**Note**: The shell function and start script will automatically detect if you're in a directory with ChromaDB configuration and use it.
 
 ## Repository
 
