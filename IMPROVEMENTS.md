@@ -1,4 +1,4 @@
-# 🔧 ChromaDB Setup - What Was Fixed
+# 🔧 Claude-Chroma - What Was Fixed
 
 ## Problems with Original Script (v2.0)
 
@@ -94,10 +94,10 @@ uvx chroma-mcp  # Handles everything
 
 ```bash
 # Test that it works
-./test_setup.sh
+./claude-chroma.sh --help
 
 # Expected output:
-✅ All validation tests passed!
+# Script shows prerequisites check and usage instructions
 ```
 
 ## Migration from Old Setup
@@ -140,12 +140,10 @@ rm -f init_chroma.sh
 
 ## The Magic: CLAUDE.md Auto-Init
 
-```javascript
-// This is all Claude needs to auto-initialize:
-1. Try: mcp__chroma__chroma_query_documents
-2. If error: mcp__chroma__chroma_create_collection
-3. Continue working with memory
-```
+Claude automatically:
+1. Tries to access existing project memories
+2. Creates memory collection if it doesn't exist
+3. Starts working with persistent memory
 
 No scripts. No Python. No manual steps. Just works. 🎉
 
@@ -166,9 +164,8 @@ uvx chroma-mcp --help  # ✅ SUCCESS: shows help and confirms availability
 ```
 
 ### Files Updated:
-- `claude-chroma.sh` lines 54, 58
-- `test_setup.sh` line 69
-- `README_FIXED.md` line 126
+- `claude-chroma.sh` - validation method improved
+- `troubleshooting.md` - updated with correct validation approach
 
 ### Test Results:
 - **Before fix**: 6/8 tests passed (validation failures)

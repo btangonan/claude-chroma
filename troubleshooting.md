@@ -1,4 +1,4 @@
-# ChromaDB Troubleshooting Guide
+# Claude-Chroma Troubleshooting Guide
 
 ## Common Issues and Solutions
 
@@ -22,11 +22,11 @@ Error: MCP server 'chromadb' not available
    uvx chroma-mcp --help
    ```
 
-3. If uvx not found:
+3. If uvx not found, install uv (which includes uvx):
    ```bash
-   pip3 install --user uvx
-   # Add to PATH if needed
-   export PATH="$HOME/.local/bin:$PATH"
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   # Restart terminal or source profile
+   source ~/.profile
    ```
 
 ---
@@ -73,12 +73,7 @@ Error: Collection project_memory does not exist
 
 **Solutions:**
 1. The collection auto-creates on first use in Claude
-2. Or create manually in Claude:
-   ```javascript
-   mcp__chroma__chroma_create_collection {
-     "collection_name": "project_memory"
-   }
-   ```
+2. Just start working - Claude will create the collection automatically when you first mention a decision or ask it to remember something
 
 ---
 

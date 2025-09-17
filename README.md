@@ -43,9 +43,10 @@ CHROMA_SETUP_ADD_SHELL_FN=1 ./claude-chroma.sh
 ## Requirements
 
 - macOS or Linux
-- Python 3.8+
-- uv package manager
+- [uv package manager](https://docs.astral.sh/uv/getting-started/installation/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - Claude Desktop app
+
+**Note**: The script will check for `uvx` and guide you through installation if needed. Python is auto-downloaded by uvx when required.
 
 ## Usage After Setup
 

@@ -1,4 +1,6 @@
-# Future Improvements for ChromaDB Setup
+# Future Improvements for Claude-Chroma
+
+> **Note**: This document outlines potential future enhancements. Code examples are conceptual illustrations, not actual implementation (Claude-Chroma is a standalone bash script, not a Python project).
 
 ## Planned Enhancements
 
@@ -134,8 +136,8 @@ def resolve_conflicts(memories):
 ### Testing New Features
 
 ```bash
-# Test harness for new features
-./chromadb/test_feature.sh --feature "memory-templates"
+# Future: Test harness for new features (not yet implemented)
+./claude-chroma.sh --test-feature "memory-templates"
 ```
 
 ### Compatibility Matrix
