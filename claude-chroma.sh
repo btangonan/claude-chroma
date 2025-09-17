@@ -718,7 +718,7 @@ if [[ $SHELL_FUNCTION_REPLY =~ ^[Yy]$ ]]; then
             # Fish shell function
             cat >> "$SHELL_CONFIG" <<'FISH_EOF'
 
-# ChromaDB Smart Function - Added by chromadb_setup_fixed.sh
+# ChromaDB Smart Function - Added by claude-chroma.sh
 function claude-chroma --description "Start Claude with auto-detected ChromaDB config"
     set config_file ""
     set search_dir "$PWD"
@@ -755,7 +755,7 @@ FISH_EOF
             # Bash/Zsh function
             cat >> "$SHELL_CONFIG" <<'BASH_EOF'
 
-# ChromaDB Smart Function - Added by chromadb_setup_fixed.sh
+# ChromaDB Smart Function - Added by claude-chroma.sh
 claude-chroma() {
     local config_file=""
     local search_dir="$PWD"

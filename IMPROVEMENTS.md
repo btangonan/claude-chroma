@@ -166,7 +166,7 @@ uvx chroma-mcp --help  # ✅ SUCCESS: shows help and confirms availability
 ```
 
 ### Files Updated:
-- `chromadb_setup_fixed.sh` lines 54, 58
+- `claude-chroma.sh` lines 54, 58
 - `test_setup.sh` line 69
 - `README_FIXED.md` line 126
 

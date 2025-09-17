@@ -8,16 +8,16 @@ Run the setup script from any directory:
 
 ```bash
 # Basic setup (interactive mode)
-"/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_fixed.sh"
+"/Users/bradleytangonan/Desktop/my apps/chromadb/claude-chroma.sh"
 
 # With project name
-"/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_fixed.sh" "my_project"
+"/Users/bradleytangonan/Desktop/my apps/chromadb/claude-chroma.sh" "my_project"
 
 # Non-interactive mode (auto-yes)
-CHROMA_SETUP_YES=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_fixed.sh"
+CHROMA_SETUP_YES=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/claude-chroma.sh"
 
 # Auto-install shell function
-CHROMA_SETUP_ADD_SHELL_FN=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_fixed.sh"
+CHROMA_SETUP_ADD_SHELL_FN=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/claude-chroma.sh"
 ```
 
 Note: Quotes are required around the path due to the space in "my apps".
@@ -32,7 +32,7 @@ Note: Quotes are required around the path due to the space in "my apps".
 
 ## Files
 
-- `chromadb_setup_fixed.sh` - Main setup script
+- `claude-chroma.sh` - Main setup script
 - `init_project_memory.py` - Initialize project memory collection
 - `quick_start.sh` - Quick setup wrapper
 - `CLAUDE.md.template` - Claude configuration template
