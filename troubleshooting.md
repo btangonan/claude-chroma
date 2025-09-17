@@ -73,11 +73,7 @@ Error: Collection project_memory does not exist
 
 **Solutions:**
 1. The collection auto-creates on first use in Claude
-2. Manually create using Python script:
-   ```bash
-   python3 init_project_memory.py
-   ```
-3. Or create in Claude:
+2. Or create manually in Claude:
    ```javascript
    mcp__chroma__chroma_create_collection {
      "collection_name": "project_memory"
@@ -194,7 +190,6 @@ ImportError: chromadb module version conflict
 ```bash
 # Fix permissions
 chmod +x chromadb/*.sh
-chmod +x init_project_memory.py
 
 # If using system Python
 pip3 install --user chromadb
@@ -204,10 +199,9 @@ pip3 install --user chromadb
 
 **Solutions:**
 1. Use Git Bash or WSL for shell scripts
-2. Or use PowerShell equivalents:
+2. Or run the main setup script:
    ```powershell
-   python chromadb\setup_chromadb.py
-   python init_project_memory.py
+   .\claude-chroma.sh
    ```
 
 #### Linux: "uvx command not found"

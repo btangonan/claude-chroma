@@ -35,7 +35,6 @@ CHROMA_SETUP_ADD_SHELL_FN=1 ./claude-chroma.sh
 ## Files
 
 - `claude-chroma.sh` - Main setup script (self-contained with embedded templates)
-- `init_project_memory.py` - Initialize project memory collection
 - `example_usage.md` - Usage examples and documentation
 - `troubleshooting.md` - Common issues and solutions
 - `FUTURE_IMPROVEMENTS.md` - Roadmap and enhancement ideas
