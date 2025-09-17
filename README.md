@@ -1,24 +1,54 @@
-To run that script from a new directory in terminal:
+# ChromaDB MCP Setup
 
-  # Option 1: Run with full path (quotes needed for spaces)
-  "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_v4_rollback.sh"
+A streamlined setup script for ChromaDB Model Context Protocol (MCP) server integration with Claude.
 
-  # Option 2: For a specific project name
-  "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_v4_rollback.sh" "my_project"
+## Quick Start
 
-  # Option 3: With project name and parent directory
-  "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_v4_rollback.sh" "my_project"
-  "/path/to/parent"
+Run the setup script from any directory:
 
-  # Option 4: Non-interactive mode (auto-yes to all prompts)
-  CHROMA_SETUP_YES=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_v4_rollback.sh"
+```bash
+# Basic setup (interactive mode)
+"/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_fixed.sh"
 
-  # Option 5: Auto-install shell function without prompting
-  CHROMA_SETUP_ADD_SHELL_FN=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_v4_rollback.sh"
+# With project name
+"/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_fixed.sh" "my_project"
 
-  Note: The quotes around the path are required because of the space in "my apps".
+# Non-interactive mode (auto-yes)
+CHROMA_SETUP_YES=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_fixed.sh"
 
-  If you run it without arguments, it will:
-  1. Ask for project name (or use current directory if blank)
-  2. Ask for parent directory (defaults to ~/Projects)
-  3. Set up ChromaDB in that location
+# Auto-install shell function
+CHROMA_SETUP_ADD_SHELL_FN=1 "/Users/bradleytangonan/Desktop/my apps/chromadb/chromadb_setup_fixed.sh"
+```
+
+Note: Quotes are required around the path due to the space in "my apps".
+
+## Features
+
+- Automated ChromaDB MCP server setup
+- Claude settings.json configuration
+- Shell function for easy access
+- Project memory initialization
+- Comprehensive error handling
+
+## Files
+
+- `chromadb_setup_fixed.sh` - Main setup script
+- `init_project_memory.py` - Initialize project memory collection
+- `quick_start.sh` - Quick setup wrapper
+- `CLAUDE.md.template` - Claude configuration template
+- `settings.local.json.template` - Settings template
+- `example_usage.md` - Usage examples and documentation
+- `troubleshooting.md` - Common issues and solutions
+- `FUTURE_IMPROVEMENTS.md` - Roadmap and enhancement ideas
+- `IMPROVEMENTS.md` - Completed improvements
+
+## Requirements
+
+- macOS or Linux
+- Python 3.8+
+- uv package manager
+- Claude Desktop app
+
+## Repository
+
+https://github.com/btangonan/chromadb-mcp

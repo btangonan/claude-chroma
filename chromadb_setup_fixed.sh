@@ -383,149 +383,174 @@ EOF
     print_status "Created .claude/settings.local.json with instructions"
 fi
 
-# Step 4: Create/Update CLAUDE.md with auto-initialization (idempotent)
-print_info "Creating/updating CLAUDE.md with auto-initialization..."
-
-# Insert or replace a tagged block so reruns don't duplicate
-TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-BEGIN_TAG="<!-- BEGIN:CHROMA-AUTOINIT -->"
-END_TAG="<!-- END:CHROMA-AUTOINIT -->"
-BLOCK="$BEGIN_TAG
-## ChromaDB Memory System - AUTO-INITIALIZATION
-
-At session start:
-1) Try query. If collection missing, create it.
-
-\`\`\`javascript
-mcp__chroma__chroma_create_collection { \"collection_name\": \"project_memory\" }
-mcp__chroma__chroma_add_documents {
-  \"collection_name\": \"project_memory\",
-  \"documents\": [\"Project initialized with Chroma memory\"],
-  \"metadatas\": [{\"type\":\"decision\",\"tags\":\"setup,chroma,memory\",\"source\":\"init\",\"timestamp\":\"$TS\"}],
-  \"ids\": [\"decision-setup-001\"]
-}
-\`\`\`
-$END_TAG"
-
-if [ -f "CLAUDE.md" ]; then
-  if grep -q "$BEGIN_TAG" CLAUDE.md; then
-    # Replace existing block
-    awk -v b="$BEGIN_TAG" -v e="$END_TAG" -v r="$BLOCK" '
-      BEGIN{p=1} $0~b{print r; p=0} p{print} $0~e{p=1; next}
-    ' CLAUDE.md > CLAUDE.md.tmp && mv CLAUDE.md.tmp CLAUDE.md
-    print_status "Updated existing ChromaDB section in CLAUDE.md"
-  else
-    # Append new block
-    printf "\n%s\n" "$BLOCK" >> CLAUDE.md
-    print_status "Added ChromaDB section to CLAUDE.md"
-  fi
-else
-  # Create new file with block
-  printf "%s\n" "$BLOCK" > CLAUDE.md
-  print_status "Created CLAUDE.md with ChromaDB section"
-fi
-
-# Create new CLAUDE.md if it doesn't exist
+# Step 4: Create enhanced CLAUDE.md
 if [ ! -f "CLAUDE.md" ]; then
     # Create new CLAUDE.md
     cat > CLAUDE.md <<'EOF'
-# CLAUDE.md — Project Configuration
+# CLAUDE.md — Project Contract
 
-**Acknowledgment**: Contract loaded. Initializing ChromaDB.
+**Purpose**: Follow this in every chat for this repo. Keep memory sharp. Keep outputs concrete. Cut rework.
 
-## ChromaDB Memory System - AUTO-INITIALIZATION
+## 🧠 Project Memory (Chroma)
 
-### Session Start Protocol
-When this file is loaded, IMMEDIATELY:
+Use server \`chroma\`. Collection \`project_memory\`.
 
-1. **Test if collection exists** by listing:
+Log after any confirmed fix, decision, gotcha, or preference.
+
+**Schema:**
+- **documents**: 1–2 sentences. Under 300 chars.
+- **metadatas**: \`{ "type":"decision|fix|tip|preference", "tags":"comma,separated", "source":"file|PR|spec|issue" }\`
+- **ids**: stable string if updating the same fact.
+
+Always reply after writes: **Logged memory: <id>**.
+
+Before proposing work, query Chroma for prior facts.
+
+### Chroma Calls
 \`\`\`javascript
-mcp__chroma__chroma_list_collections
-\`\`\`
-
-2. **If project_memory not in list**, create it:
-\`\`\`javascript
+// Create once:
 mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
-\`\`\`
 
-3. **Log initial memory** if collection was just created:
-\`\`\`javascript
+// Add:
 mcp__chroma__chroma_add_documents {
   "collection_name": "project_memory",
-  "documents": ["Project initialized with ChromaDB memory system"],
-  "metadatas": [{
-    "type": "setup",
-    "tags": "init,chroma",
-    "source": "CLAUDE.md",
-    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-    "confidence": 1.0
-  }],
-  "ids": ["init-001"]
+  "documents": ["<text>"],
+  "metadatas": [{"type":"<type>","tags":"a,b,c","source":"<src>"}],
+  "ids": ["<stable-id>"]
 }
-\`\`\`
 
-### Memory Schema
-\`\`\`javascript
-{
-  "documents": ["Concise description <300 chars"],
-  "metadatas": [{
-    "type": "decision|fix|tip|pattern",
-    "tags": "tag1,tag2",
-    "source": "filename:line",
-    "timestamp": "ISO8601",
-    "confidence": 0.0-1.0
-  }],
-  "ids": ["type-component-YYYYMMDD-seq"]
-}
-\`\`\`
-
-### Automatic Memory Logging
-Log memories automatically when:
-- ✅ Bug fixed → Log solution
-- 🔧 Configuration changed → Log decision
-- ⚡ Performance improved → Log optimization
-- 🏗️ Architecture decision → Log pattern
-- 📦 Dependencies changed → Log reasoning
-
-### Memory Operations
-
-**After each memory write**, confirm with:
-\`\`\`
-💾 Logged memory: {id}
-\`\`\`
-
-**Query relevant memories** before major changes:
-\`\`\`javascript
+// Query:
 mcp__chroma__chroma_query_documents {
   "collection_name": "project_memory",
-  "query_texts": ["relevant", "keywords"],
-  "n_results": 10
+  "query_texts": ["<query>"],
+  "n_results": 5
 }
 \`\`\`
 
-### Confidence Levels
-- \`0.3-0.5\` = Hypothesis (untested)
-- \`0.6-0.8\` = Validated (tested)
-- \`0.9-1.0\` = Proven (production-verified)
+## 🧩 Deterministic Reasoning
 
-## Project Rules
-1. Keep memories concise (<300 chars)
-2. Use consistent ID format
-3. Update confidence as patterns prove reliable
-4. Query before solving similar problems
-5. Log both successes and failures
+Default: concise, action oriented.
 
-## Tool Preferences
-- Multi-file edits → MultiEdit
-- Search → Grep (not bash grep)
-- File patterns → Glob (not find)
+Auto-propose sequential-thinking when a task has 3+ dependent steps or multiple tradeoffs. Enable for one turn, then disable.
 
-## Output Policy
-- Concise responses
-- Unified diffs
-- No verbose explanations unless requested
+If I say "reason stepwise", enable for one turn, then disable.
+
+## 🌐 Browser Automation
+
+Use playwright to load pages, scrape DOM, run checks, and export screenshots or PDFs.
+
+Save artifacts to \`./backups/\` with timestamped filenames.
+
+Summarize results and list file paths.
+
+## 🐙 GitHub
+
+Use github to fetch files, list and inspect issues and PRs, and draft PR comments.
+
+Never push or merge without explicit approval.
+
+Always show diffs, file paths, or PR numbers before proposing changes.
+
+## 🔧 Additional MCP Servers
+
+- **context7**: library docs search. Example: \`/docs react hooks\`
+- **magic**: UI components and small React blocks. Example: \`/ui button\`
+- **sequential-thinking**: complex planning mode as above
+
+## 🛠️ Tool Selection Matrix
+
+| Task | Tool |
+|------|------|
+| Multi-file edits | MultiEdit (if available). Otherwise propose a unified diff per file. |
+| Pattern search in repo | Grep MCP (not shell grep). Return matches with file paths and line numbers. |
+| UI snippet or component | Magic MCP. Return a self-contained file. |
+| Complex analysis or planning | Sequential-thinking for one turn. |
+| Docs or library behavior | context7 first. Quote relevant lines, then summarize. |
+| Web page check or scrape | Playwright with artifacts saved to \`./backups/\`. |
+
+If a listed tool is missing, state the exact server or tool name that is unavailable and ask to enable it.
+
+## 📋 Spec & Planning (Lite)
+
+For new features, run three phases:
+
+1. \`/specify\` → user stories, functional requirements, acceptance tests
+2. \`/plan\` → stack, architecture, constraints, performance and testing goals
+3. \`/tasks\` → granular, test-first steps
+
+Log key spec and plan decisions to Chroma as \`type:"decision"\` with tags.
+
+## ✅ Quality Gates
+
+- Every requirement is unambiguous, testable, and bounded
+- Prefer tests and unified diffs over prose
+- Mark uncertainty with \`[VERIFY]\` and propose checks
+- Include simple performance budgets where relevant (e.g., search under 100ms at 10k rows)
+
+## 🔄 Session Lifecycle
+
+- **Start**: Query Chroma for context relevant to the task. List any matches you will rely on.
+- **Work**: Log decisions and gotchas as they happen. Keep each memory under 300 chars.
+- **Checkpoint**: Every 30 minutes or at a major milestone, summarize progress, open risks, and memories logged.
+- **End**: Summarize changes, link artifacts in \`./backups/\`, and list all memories written.
+
+## 🧹 Session Hygiene
+
+- Do not compact long chats
+- If context gets heavy, propose pruning to the last 20 turns and continue
+- For long outputs, write files to \`./backups/\` and return paths
+
+## 🔍 Retrieval Checklist Before Coding
+
+1. Query Chroma for related memories
+2. Check repo files that match the task
+3. List open PRs or issues that touch the same area
+4. Only then propose changes
+
+## 🏷️ Memory Taxonomy
+
+- **type**: \`decision\`, \`fix\`, \`tip\`, \`preference\`
+- **tags**: short domain keywords (e.g., \`video,encode,preview\`)
+- **id rule**: stable handle per fact (e.g., \`encode-preview-policy\`)
+
+### Memory Examples
+\`\`\`javascript
+documents: ["Use NVENC for H.264 previews; fallback x264 if GPU is busy"]
+metadatas: [{ "type":"tip","tags":"video,encode,preview","source":"PR#142" }]
+ids: ["encode-preview-policy"]
+
+documents: ["Adopt Conventional Commits and run tests on pre-push"]
+metadatas: [{ "type":"decision","tags":"repo,workflow,testing","source":"spec" }]
+ids: ["repo-commit-policy"]
+\`\`\`
+
+## 📁 Output Policy
+
+- For code: return a unified diff or a patchable file set
+- For scripts: include exact commands and paths
+- Save long outputs in \`./backups/\`. Use readable names. Echo paths in the reply
+
+## 🛡️ Safety
+
+- No secrets in \`.chroma\` or transcripts
+- Note licenses and third party terms when adding dependencies
+- Respect rate limits. Propose batching if needed
+
+## 🚀 Modes
+
+**Small change**: Skip full spec. Still log key decisions. Still show diffs.
+
+**Feature**: Run the three phases. Enforce quality gates.
+
+## ⚡ Activation
+
+Read this file at chat start.
+
+Acknowledge: **Contract loaded. Using Chroma project_memory.**
+
+If tools are missing, name them and stop before continuing.
 EOF
-    print_status "Created CLAUDE.md with auto-initialization"
+    print_status "Created enhanced CLAUDE.md with complete project contract"
 fi
 
 # Step 5: Create .gitignore
@@ -613,7 +638,27 @@ Claude will automatically:
 EOF
 print_status "Created initialization instructions"
 
-# Step 7: Optional shell function setup
+# Step 7: Create project launcher script
+print_info "Creating project launcher script..."
+cat > start-claude-chroma.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Check if config exists
+if [[ ! -f ".claude/settings.local.json" ]]; then
+    echo "❌ No Claude config found in this directory"
+    echo "Run the ChromaDB setup script first"
+    exit 1
+fi
+
+# Start Claude with ChromaDB MCP config
+echo "🚀 Starting Claude with ChromaDB..."
+exec claude chat --mcp-config .claude/settings.local.json "$@"
+EOF
+chmod +x start-claude-chroma.sh
+print_status "Created start-claude-chroma.sh launcher"
+
+# Step 8: Optional shell function setup
 print_header "🚀 Optional: Smart Shell Function"
 
 print_info "Would you like to add a global 'claude-chroma' function to your shell?"
@@ -689,10 +734,20 @@ function claude-chroma --description "Start Claude with auto-detected ChromaDB c
 
     if test -n "$config_file"
         echo "Using ChromaDB config: $config_file"
-        claude --mcp-config "$config_file" $argv
+        # Default to 'chat' if no subcommand provided
+        if test (count $argv) -eq 0
+            claude chat --mcp-config "$config_file"
+        else
+            claude --mcp-config "$config_file" $argv
+        end
     else
         echo "No ChromaDB config found - using regular Claude"
-        claude $argv
+        # Default to 'chat' if no subcommand provided
+        if test (count $argv) -eq 0
+            claude chat
+        else
+            claude $argv
+        end
     end
 end
 FISH_EOF
@@ -716,10 +771,20 @@ claude-chroma() {
 
     if [[ -n "$config_file" ]]; then
         echo "Using ChromaDB config: $config_file"
-        claude --mcp-config "$config_file" "$@"
+        # Default to 'chat' if no arguments provided
+        if [[ $# -eq 0 ]]; then
+            claude chat --mcp-config "$config_file"
+        else
+            claude --mcp-config "$config_file" "$@"
+        fi
     else
         echo "No ChromaDB config found - using regular Claude"
-        claude "$@"
+        # Default to 'chat' if no arguments provided
+        if [[ $# -eq 0 ]]; then
+            claude chat
+        else
+            claude "$@"
+        fi
     fi
 }
 BASH_EOF
