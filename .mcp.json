@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "chroma": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "-qq",
+        "chroma-mcp",
+        "--client-type",
+        "persistent",
+        "--data-dir",
+        "/Users/bradleytangonan/Desktop/my apps/chromadb/.chroma"
+      ],
+      "env": {
+        "ANONYMIZED_TELEMETRY": "FALSE",
+        "PYTHONUNBUFFERED": "1",
+        "TOKENIZERS_PARALLELISM": "False"
+      }
+    }
+  }
+}
