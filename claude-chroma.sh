@@ -1,6 +1,13 @@
 #!/bin/bash
 # ChromaDB setup for Claude projects - Production-ready version
-# Version 3.4.3 - Safe settings.local.json memory instructions
+# Version 3.4.5 - Remove 'chat' command to prevent auto-typing bug
+# v3.4.5 Changes:
+# - Removed all 'claude' references - just use 'claude' command
+# - Prevents Claude from auto-typing 'chat' and going on coding sprees
+# v3.4.4 Changes:
+# - CRITICAL FIX: Fixed ERR trap causing .mcp.json and CLAUDE.md to be deleted
+# - The ERR trap was firing during expected non-zero returns, causing rollback
+# - Now properly disables both 'set -e' AND the ERR trap when checking global files
 # v3.4.3 Changes:
 # - Added READ-ONLY detection of global settings.local.json memory instructions
 # - NEVER modifies global ~/.claude/settings.local.json (safety guaranteed)
@@ -32,7 +39,7 @@
 # - Changed 'Read this file at chat start' to 'Read this file at session start'
 # - Changed 'Follow this in every chat' to 'Follow this in every session'
 # v3.3.3 Changes:
-# - Clarified that 'claude chat' is a single command, not two separate inputs
+# - Previously used 'claude chat' but removed to prevent auto-typing bug
 # - Added explicit note to prevent users from typing 'chat' after starting claude
 # - Improved launcher script messaging
 # v3.3.2 Changes:
@@ -67,7 +74,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.4.3"
+readonly SCRIPT_VERSION="3.4.5"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -371,8 +378,13 @@ ensure_memory_discipline() {
     print_info "Checking memory discipline configuration..."
 
     # READ-ONLY check of global configuration
+    # Must disable both error exit AND the ERR trap to prevent rollback
+    set +e  # Temporarily disable exit on error
+    trap - ERR  # Temporarily disable the ERR trap
     check_global_memory_rules
     local global_status=$?
+    set -e  # Re-enable exit on error
+    trap on_err ERR  # Re-enable the ERR trap
 
     case $global_status in
         0)
@@ -534,10 +546,13 @@ ensure_settings_memory_discipline() {
     print_info "Checking settings.json memory configuration..."
 
     # READ-ONLY check of global settings
-    set +e  # Temporarily disable exit on error for this check
+    # Must disable both error exit AND the ERR trap to prevent rollback
+    set +e  # Temporarily disable exit on error
+    trap - ERR  # Temporarily disable the ERR trap
     check_global_settings_memory
     local global_settings_status=$?
     set -e  # Re-enable exit on error
+    trap on_err ERR  # Re-enable the ERR trap
 
     case $global_settings_status in
         0)
@@ -1342,7 +1357,7 @@ When you start Claude in this project:
 ## Starting Claude
 ```bash
 # From project directory:
-claude chat
+claude
 
 # Or use the launcher:
 ./start-claude-chroma.sh
@@ -1419,10 +1434,9 @@ if ! jq -e . .mcp.json >/dev/null 2>&1; then
     exit 1
 fi
 
-# Start Claude with chat subcommand - it will auto-detect .mcp.json
+# Start Claude - it will auto-detect .mcp.json
 echo "🚀 Starting Claude with ChromaDB..."
-echo "📝 Note: Running '"'"'claude chat'"'"' as a single command"
-exec claude chat "$@"'
+exec claude "$@"'
 
     write_file_safe "start-claude-chroma.sh" "$content"
 
@@ -1490,14 +1504,14 @@ function claude-chroma --description "Start Claude with auto-detected ChromaDB c
         echo "Using ChromaDB project: $project_dir"
         cd "$project_dir"
         if test (count $argv) -eq 0
-            claude chat
+            claude
         else
             claude $argv
         end
     else
         echo "No ChromaDB config found - using regular Claude"
         if test (count $argv) -eq 0
-            claude chat
+            claude
         else
             claude $argv
         end
@@ -1524,14 +1538,14 @@ claude-chroma() {
         echo "🧠 Using ChromaDB project: $project_dir"
         cd "$project_dir"
         if [[ $# -eq 0 ]]; then
-            claude chat
+            claude
         else
             claude "$@"
         fi
     else
         echo "ℹ️  No ChromaDB config found - using regular Claude"
         if [[ $# -eq 0 ]]; then
-            claude chat
+            claude
         else
             claude "$@"
         fi
@@ -1633,14 +1647,14 @@ claude-chroma() {
         echo "🧠 Using ChromaDB project: $project_dir"
         cd "$project_dir"
         if [[ $# -eq 0 ]]; then
-            claude chat
+            claude
         else
             claude "$@"
         fi
     else
         echo "ℹ️  No ChromaDB config found - using regular Claude"
         if [[ $# -eq 0 ]]; then
-            claude chat
+            claude
         else
             claude "$@"
         fi
@@ -1737,7 +1751,7 @@ print_summary() {
         print_info "Next steps:"
         echo "  1. cd \"$PROJECT_DIR\""
         echo "  2. Run ONE of these commands:"
-        echo "     $ claude chat      (single command - do NOT type 'chat' after starting)"
+        echo "     $ claude           (starts Claude with ChromaDB)"
         echo "     $ ./start-claude-chroma.sh"
         echo "  3. Claude auto-initializes ChromaDB"
 
