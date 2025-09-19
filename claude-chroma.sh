@@ -1,6 +1,11 @@
 #!/bin/bash
 # ChromaDB setup for Claude projects - Production-ready version
-# Version 3.4.2 - Safe global CLAUDE.md detection
+# Version 3.4.3 - Safe settings.local.json memory instructions
+# v3.4.3 Changes:
+# - Added READ-ONLY detection of global settings.local.json memory instructions
+# - NEVER modifies global ~/.claude/settings.local.json (safety guaranteed)
+# - Creates/updates project .claude/settings.local.json with memory instructions
+# - Merges memory instructions with existing project settings if present
 # v3.4.2 Changes:
 # - Added READ-ONLY detection of global memory checkpoint rules
 # - NEVER modifies global ~/.claude/CLAUDE.md (safety guaranteed)
@@ -62,7 +67,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.4.2"
+readonly SCRIPT_VERSION="3.4.3"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -388,6 +393,171 @@ ensure_memory_discipline() {
     esac
 
     # Always ensure project CLAUDE.md has memory rules (already handled in create_claude_md)
+    return 0
+}
+
+# ============================================================================
+# SETTINGS.LOCAL.JSON MEMORY CHECKS (READ-ONLY for global files)
+# ============================================================================
+# These functions NEVER modify global ~/.claude/settings.local.json
+# They only read to check status and create local project settings if needed
+
+check_global_settings_memory() {
+    # READ-ONLY check if global settings.local.json has memory instructions
+    # Returns: 0 if has memory instructions, 1 if not, 2 if file doesn't exist or invalid
+
+    local readonly GLOBAL_SETTINGS="$HOME/.claude/settings.local.json"
+
+    # Check if global file exists (READ-ONLY)
+    if [[ ! -f "$GLOBAL_SETTINGS" ]]; then
+        debug_log "Global settings.local.json not found at $GLOBAL_SETTINGS"
+        return 2
+    fi
+
+    # Check if file is readable (no modification attempt)
+    if [[ ! -r "$GLOBAL_SETTINGS" ]]; then
+        debug_log "Global settings.local.json exists but not readable"
+        return 2
+    fi
+
+    # Validate JSON structure (READ-ONLY)
+    if ! jq -e '.' "$GLOBAL_SETTINGS" >/dev/null 2>&1; then
+        debug_log "Global settings.local.json has invalid JSON"
+        return 2
+    fi
+
+    # READ-ONLY check for memory-related instructions
+    # Extract instructions array and check for memory keywords
+    # Note: jq without -e to handle missing instructions field gracefully
+    local instructions_content
+    instructions_content=$(jq -r '.instructions[]?' "$GLOBAL_SETTINGS" 2>/dev/null || echo "")
+
+    if [[ -n "$instructions_content" ]] && echo "$instructions_content" | \
+       grep -qi 'memory\|checkpoint\|chroma\|interactions\|discoveries' 2>/dev/null; then
+        debug_log "Memory instructions found in global settings.local.json"
+        return 0
+    else
+        debug_log "Memory instructions NOT found in global settings.local.json"
+        return 1
+    fi
+}
+
+create_project_settings_memory() {
+    # Creates/updates LOCAL project .claude/settings.local.json with memory instructions
+    # Never touches global settings files
+
+    print_info "Configuring project settings with memory instructions..."
+
+    local project_settings_dir=".claude"
+    local project_settings_file="$project_settings_dir/settings.local.json"
+
+    # Create .claude directory if it doesn't exist
+    if [[ ! -d "$project_settings_dir" ]]; then
+        if [[ "$DRY_RUN" == "1" ]]; then
+            print_info "[dry-run] Would create directory: $project_settings_dir"
+        else
+            mkdir -p "$project_settings_dir"
+            touch_track "$project_settings_dir"
+        fi
+    fi
+
+    # Memory discipline instructions
+    local memory_instructions='[
+        "IMPORTANT: This project uses ChromaDB for persistent memory",
+        "Every 5 interactions, check if you have logged recent learnings",
+        "After solving problems or making decisions, immediately log to ChromaDB",
+        "Use mcp__chroma__chroma_add_documents to preserve discoveries",
+        "Query existing memories at session start with mcp__chroma__chroma_query_documents",
+        "Each memory should be under 300 chars with appropriate metadata",
+        "Log architecture decisions, user preferences, fixes, and patterns"
+    ]'
+
+    local new_settings=""
+
+    # Check if project settings already exists
+    if [[ -f "$project_settings_file" ]]; then
+        print_info "Existing project settings.local.json found"
+
+        if [[ "$DRY_RUN" == "1" ]]; then
+            print_info "[dry-run] Would merge memory instructions into existing settings"
+        else
+            # Backup existing file
+            backup_if_exists "$project_settings_file"
+
+            # Check if it has instructions already
+            local has_instructions=$(jq -e '.instructions' "$project_settings_file" 2>/dev/null && echo "yes" || echo "no")
+
+            if [[ "$has_instructions" == "yes" ]]; then
+                # Merge memory instructions with existing
+                new_settings=$(jq \
+                    --argjson mem_inst "$memory_instructions" \
+                    '.instructions = (.instructions + $mem_inst | unique)' \
+                    "$project_settings_file")
+            else
+                # Add instructions field
+                new_settings=$(jq \
+                    --argjson mem_inst "$memory_instructions" \
+                    '. + {instructions: $mem_inst}' \
+                    "$project_settings_file")
+            fi
+        fi
+    else
+        # Create new settings file with memory instructions
+        if [[ "$DRY_RUN" == "1" ]]; then
+            print_info "[dry-run] Would create project settings with memory instructions"
+        else
+            new_settings=$(jq -n \
+                --argjson mem_inst "$memory_instructions" \
+                '{
+                    instructions: $mem_inst,
+                    permissions: {
+                        allow: [],
+                        deny: [],
+                        ask: []
+                    }
+                }')
+        fi
+    fi
+
+    if [[ "$DRY_RUN" != "1" ]] && [[ -n "$new_settings" ]]; then
+        write_file_safe "$project_settings_file" "$new_settings"
+        print_status "Project settings configured with memory instructions"
+    fi
+
+    print_info "💡 Project .claude/settings.local.json ensures memory discipline"
+}
+
+ensure_settings_memory_discipline() {
+    # Orchestrates settings.json memory discipline setup
+    # NEVER modifies global files, only creates/updates project settings
+
+    print_info "Checking settings.json memory configuration..."
+
+    # READ-ONLY check of global settings
+    set +e  # Temporarily disable exit on error for this check
+    check_global_settings_memory
+    local global_settings_status=$?
+    set -e  # Re-enable exit on error
+
+    case $global_settings_status in
+        0)
+            print_status "✓ Global settings.json has memory instructions"
+            print_info "Creating project settings to reinforce memory discipline..."
+            create_project_settings_memory
+            ;;
+        1)
+            print_warning "Memory instructions not found in global settings.json"
+            print_info "Creating project settings with memory instructions..."
+            create_project_settings_memory
+            print_info "💡 Consider adding memory instructions to ~/.claude/settings.local.json"
+            ;;
+        2)
+            print_info "Global settings.json not accessible or invalid"
+            print_info "Creating project settings with memory instructions..."
+            create_project_settings_memory
+            ;;
+    esac
+
     return 0
 }
 
@@ -1665,6 +1835,7 @@ main() {
     check_mcp_timeout_settings
     create_claude_md
     ensure_memory_discipline
+    ensure_settings_memory_discipline
     create_gitignore
     create_init_docs
     create_launcher
