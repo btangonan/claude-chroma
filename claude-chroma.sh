@@ -1,6 +1,11 @@
 #!/bin/bash
 # ChromaDB setup for Claude projects - Production-ready version
-# Version 3.4.1 - Restored memory checkpoint rules
+# Version 3.4.2 - Safe global CLAUDE.md detection
+# v3.4.2 Changes:
+# - Added READ-ONLY detection of global memory checkpoint rules
+# - NEVER modifies global ~/.claude/CLAUDE.md (safety guaranteed)
+# - Creates local MEMORY_CHECKPOINT_REMINDER.md if global lacks rules
+# - Ensures memory discipline without touching global configuration
 # v3.4.1 Changes:
 # - Restored memory checkpoint rules that were accidentally removed in 3.4.0
 # - Added explicit reminders for long coding sessions (>10 interactions)
@@ -57,7 +62,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.4.1"
+readonly SCRIPT_VERSION="3.4.2"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -265,6 +270,125 @@ backup_claude_md() {
         return 0
     fi
     return 1
+}
+
+# ============================================================================
+# MEMORY DISCIPLINE CHECKS (READ-ONLY for global files)
+# ============================================================================
+# These functions NEVER modify global ~/.claude/CLAUDE.md
+# They only read to check status and create local project reminders if needed
+
+check_global_memory_rules() {
+    # READ-ONLY check if global CLAUDE.md has memory checkpoint rules
+    # Returns: 0 if rules exist, 1 if not, 2 if file doesn't exist
+
+    local readonly GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
+
+    # Check if global file exists (READ-ONLY)
+    if [[ ! -f "$GLOBAL_CLAUDE" ]]; then
+        debug_log "Global CLAUDE.md not found at $GLOBAL_CLAUDE"
+        return 2
+    fi
+
+    # Check if file is readable (no modification attempt)
+    if [[ ! -r "$GLOBAL_CLAUDE" ]]; then
+        debug_log "Global CLAUDE.md exists but not readable"
+        return 2
+    fi
+
+    # READ-ONLY grep check for memory checkpoint rules
+    if grep -q "Memory Checkpoint Rules" "$GLOBAL_CLAUDE" 2>/dev/null; then
+        debug_log "Memory checkpoint rules found in global CLAUDE.md"
+        return 0
+    else
+        debug_log "Memory checkpoint rules NOT found in global CLAUDE.md"
+        return 1
+    fi
+}
+
+create_memory_reminder_doc() {
+    # Creates a LOCAL project file with memory reminders
+    # Never touches global files
+
+    print_info "Creating local memory reminder document..."
+
+    local content='# 📝 MEMORY CHECKPOINT REMINDER
+
+**IMPORTANT**: Your global CLAUDE.md may not have memory checkpoint rules.
+This local reminder ensures you maintain memory discipline in this project.
+
+## Memory Checkpoint Rules
+
+**Every 5 interactions or after completing a task**, pause and check:
+- Did I discover new decisions, fixes, or patterns?
+- Did the user express any preferences?
+- Did I solve tricky problems or learn about architecture?
+
+If yes → Log memory IMMEDIATELY:
+```javascript
+mcp__chroma__chroma_add_documents {
+  "collection_name": "project_memory",
+  "documents": ["<discovery under 300 chars>"],
+  "metadatas": [{"type":"decision|fix|tip|preference","tags":"relevant,tags","source":"file"}],
+  "ids": ["<unique-id>"]
+}
+```
+
+**During long sessions (>10 interactions)**:
+- Stop and review: Have I logged recent learnings?
+- Check for unrecorded decisions or fixes
+- Remember: Each memory helps future sessions
+
+## At Session Start
+
+Always query existing memories first:
+```javascript
+mcp__chroma__chroma_query_documents {
+  "collection_name": "project_memory",
+  "query_texts": ["project decisions preferences fixes patterns"],
+  "n_results": 10
+}
+```
+
+---
+*This file was created because memory checkpoint rules were not detected in global CLAUDE.md*
+*To add them globally (optional): Add the rules to ~/.claude/CLAUDE.md manually*'
+
+    write_file_safe "MEMORY_CHECKPOINT_REMINDER.md" "$content"
+    print_status "Created MEMORY_CHECKPOINT_REMINDER.md"
+    print_info "💡 This ensures memory discipline for this project"
+}
+
+ensure_memory_discipline() {
+    # Orchestrates memory discipline setup
+    # NEVER modifies global files, only creates local supplements
+
+    print_info "Checking memory discipline configuration..."
+
+    # READ-ONLY check of global configuration
+    check_global_memory_rules
+    local global_status=$?
+
+    case $global_status in
+        0)
+            print_status "✓ Global memory checkpoint rules detected"
+            print_info "Memory discipline is configured globally"
+            ;;
+        1)
+            print_warning "Memory checkpoint rules not found in global CLAUDE.md"
+            print_info "Creating local reminder to ensure memory discipline..."
+            create_memory_reminder_doc
+            print_info "💡 Consider adding memory rules to ~/.claude/CLAUDE.md for all projects"
+            ;;
+        2)
+            print_info "Global CLAUDE.md not accessible"
+            print_info "Creating local memory reminder for this project..."
+            create_memory_reminder_doc
+            ;;
+    esac
+
+    # Always ensure project CLAUDE.md has memory rules (already handled in create_claude_md)
+    return 0
 }
 
 atomic_write() {
@@ -1540,6 +1664,7 @@ main() {
     create_mcp_config
     check_mcp_timeout_settings
     create_claude_md
+    ensure_memory_discipline
     create_gitignore
     create_init_docs
     create_launcher
