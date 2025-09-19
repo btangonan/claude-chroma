@@ -1,6 +1,33 @@
 #!/bin/bash
 # ChromaDB setup for Claude projects - Production-ready version
-# Version 3.2 - Critical security and functionality fixes
+# Version 3.3.5 - Fix confusing 'result is None' message
+# v3.3.5 Changes:
+# - Updated CLAUDE.md to handle ChromaDB returning None on success
+# - Changed memory logging instruction to not expect ID back
+# - Clearer success confirmation without showing 'None' result
+# v3.3.4 Changes:
+# - Fixed CLAUDE.md causing Claude to auto-type 'chat'
+# - Changed 'Read this file at chat start' to 'Read this file at session start'
+# - Changed 'Follow this in every chat' to 'Follow this in every session'
+# v3.3.3 Changes:
+# - Clarified that 'claude chat' is a single command, not two separate inputs
+# - Added explicit note to prevent users from typing 'chat' after starting claude
+# - Improved launcher script messaging
+# v3.3.2 Changes:
+# - Improved CLAUDE.md handling to preserve existing user instructions
+# - Creates CLAUDE.md.original backup for easy reference
+# - No longer prompts to overwrite, automatically backs up existing content
+# - Adds clear messaging about where original instructions are preserved
+# v3.3.1 Changes:
+# - Relaxed character validation to allow apostrophes, brackets, parentheses
+# - Now only blocks backticks and $ for command substitution prevention
+# - Fixes support for paths like "John's Documents" and "Files [2025]"
+# v3.3.0 Changes:
+# - Added infinite timeout settings to prevent session disconnections
+# - Auto-detect and fix broken shell functions from older versions
+# - Validate and update existing .mcp.json files without timeout settings
+# - Made script fully self-contained for portable deployments
+# Previous v3.2 features:
 # - Fixed path validation to allow spaces
 # - Added comprehensive input sanitization
 # - Atomic writes with automatic backups
@@ -18,7 +45,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.2.0"
+readonly SCRIPT_VERSION="3.3.5"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -122,7 +149,18 @@ debug_log() {
 # ============================================================================
 # INPUT VALIDATION & SANITIZATION
 # ============================================================================
-readonly dangerous_char_class='[`$(){}[\]<>|&;"]'
+# Security Model:
+# - We only block characters that enable command execution (backticks, $)
+# - Apostrophes, quotes, brackets, parentheses are SAFE when properly quoted
+# - The script uses proper quoting everywhere: "$VAR" in shell, jq --arg for JSON
+# - This allows legitimate paths like "John's Documents" or "Files [2025]"
+#
+# Previous overly-strict pattern that blocked too many valid characters:
+# readonly dangerous_char_class='[`$(){}[\]<>|&;"]'
+#
+# Minimal pattern - blocks only command substitution risks:
+readonly dangerous_char_class='[`$]'
+# Note: Could be even more permissive with just '[`]' if $ in paths needed
 
 sanitize_input() {
     # Strips traversal attempts and dangerous characters
@@ -143,9 +181,10 @@ validate_path() {
 
     # Allow spaces but forbid truly dangerous metacharacters
     if [[ "$path" =~ [$dangerous_char_class] ]]; then
-        print_error "Invalid path: contains dangerous characters"
+        print_error "Invalid path: contains command execution characters"
         print_info "Path: $path"
-        print_info "Remove these characters: \` \$ ( ) { } [ ] < > | & ; \""
+        print_info "Remove these characters: \` \$ (backtick and dollar sign)"
+        print_info "These enable command substitution and must be blocked for security"
         return 1
     fi
 
@@ -186,6 +225,34 @@ backup_if_exists() {
                 debug_log "Backed up: $file → $backup_name"
         fi
     fi
+}
+
+# Special backup for CLAUDE.md that preserves user content clearly
+backup_claude_md() {
+    if [[ -f "CLAUDE.md" ]]; then
+        # Create timestamped backup for safety
+        local timestamped_backup="CLAUDE.md.backup.$(date +%Y%m%d_%H%M%S)"
+
+        if [[ "$DRY_RUN" == "1" ]]; then
+            print_info "[dry-run] Would backup CLAUDE.md to:"
+            print_info "  → $timestamped_backup (timestamped safety backup)"
+            print_info "  → CLAUDE.md.original (for easy reference)"
+        else
+            # Create timestamped backup
+            cp -p "CLAUDE.md" "$timestamped_backup" && \
+                debug_log "Created timestamped backup: $timestamped_backup"
+
+            # Also create/update .original for easy user reference
+            cp -p "CLAUDE.md" "CLAUDE.md.original" && \
+                debug_log "Created reference copy: CLAUDE.md.original"
+
+            print_info "📁 Preserved your existing CLAUDE.md:"
+            print_info "  → CLAUDE.md.original (your custom instructions)"
+            print_info "  → $timestamped_backup (timestamped backup)"
+        fi
+        return 0
+    fi
+    return 1
 }
 
 atomic_write() {
@@ -247,7 +314,7 @@ require_cmd() {
 }
 
 json_emit_mcp_config() {
-    # Generate MCP configuration JSON safely
+    # Generate MCP configuration JSON safely with infinite timeout settings
     local command="$1"
     local data_dir="$2"
 
@@ -265,7 +332,14 @@ json_emit_mcp_config() {
               env: {
                 ANONYMIZED_TELEMETRY: "FALSE",
                 PYTHONUNBUFFERED: "1",
-                TOKENIZERS_PARALLELISM: "False"
+                TOKENIZERS_PARALLELISM: "False",
+                CHROMA_SERVER_KEEP_ALIVE: "0",
+                CHROMA_CLIENT_TIMEOUT: "0"
+              },
+              initializationOptions: {
+                timeout: 0,
+                keepAlive: true,
+                retryAttempts: 5
               }
             }
           }
@@ -292,7 +366,7 @@ json_validate() {
 }
 
 json_merge_mcp_config() {
-    # Merge ChromaDB config into existing .mcp.json
+    # Merge ChromaDB config into existing .mcp.json with infinite timeout settings
     local existing_file="$1"
     local command="$2"
     local data_dir="$3"
@@ -310,7 +384,14 @@ json_merge_mcp_config() {
            env: {
              ANONYMIZED_TELEMETRY: "FALSE",
              PYTHONUNBUFFERED: "1",
-             TOKENIZERS_PARALLELISM: "False"
+             TOKENIZERS_PARALLELISM: "False",
+             CHROMA_SERVER_KEEP_ALIVE: "0",
+             CHROMA_CLIENT_TIMEOUT: "0"
+           },
+           initializationOptions: {
+             timeout: 0,
+             keepAlive: true,
+             retryAttempts: 5
            }
          }' "$existing_file"
 }
@@ -663,17 +744,13 @@ create_claude_md() {
 
     if [[ -f "CLAUDE.md" ]]; then
         print_info "CLAUDE.md already exists"
-        if prompt_yes "Update with ChromaDB instructions?"; then
-            backup_if_exists "CLAUDE.md"
-        else
-            print_info "Keeping existing CLAUDE.md"
-            return 0
-        fi
+        print_info "Backing up your existing instructions and creating ChromaDB configuration..."
+        backup_claude_md
     fi
 
     local content='# CLAUDE.md — Project Contract
 
-**Purpose**: Follow this in every chat for this repo. Keep memory sharp. Keep outputs concrete. Cut rework.
+**Purpose**: Follow this in every session for this repo. Keep memory sharp. Keep outputs concrete. Cut rework.
 
 ## 🧠 Project Memory (Chroma)
 
@@ -686,7 +763,7 @@ Log after any confirmed fix, decision, gotcha, or preference.
 - **metadatas**: `{ "type":"decision|fix|tip|preference", "tags":"comma,separated", "source":"file|PR|spec|issue" }`
 - **ids**: stable string if updating the same fact.
 
-Always reply after writes: **Logged memory: <id>**.
+After adding memories, confirm with: **✓ Memory logged** (ignore "result is None" - that's normal)
 
 Before proposing work, query Chroma for prior facts.
 
@@ -695,7 +772,7 @@ Before proposing work, query Chroma for prior facts.
 // Create once:
 mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
 
-// Add:
+// Add (Note: returns None on success, not IDs):
 mcp__chroma__chroma_add_documents {
   "collection_name": "project_memory",
   "documents": ["<text>"],
@@ -757,14 +834,22 @@ ids: ["repo-commit-policy"]
 
 ## ⚡ Activation
 
-Read this file at chat start.
+Read this file at session start.
 
 Acknowledge: **Contract loaded. Using Chroma project_memory.**
 
-If tools are missing, name them and stop before continuing.'
+If tools are missing, name them and stop before continuing.
+
+---
+*Note: If you had existing CLAUDE.md instructions, they are preserved in `CLAUDE.md.original`*'
 
     write_file_safe "CLAUDE.md" "$content"
-    print_status "Created CLAUDE.md"
+    print_status "Created CLAUDE.md with ChromaDB instructions"
+
+    if [[ -f "CLAUDE.md.original" ]] && [[ "$DRY_RUN" != "1" ]]; then
+        print_info "💡 Your original instructions are preserved in: CLAUDE.md.original"
+        print_info "   You can manually merge them if needed"
+    fi
 }
 
 create_gitignore() {
@@ -915,8 +1000,9 @@ if ! jq -e . .mcp.json >/dev/null 2>&1; then
     exit 1
 fi
 
-# Start Claude - it will auto-detect .mcp.json
+# Start Claude with chat subcommand - it will auto-detect .mcp.json
 echo "🚀 Starting Claude with ChromaDB..."
+echo "📝 Note: Running '"'"'claude chat'"'"' as a single command"
 exec claude chat "$@"'
 
     write_file_safe "start-claude-chroma.sh" "$content"
@@ -966,7 +1052,7 @@ setup_shell_function() {
 
     if [[ "$shell_name" == "fish" ]]; then
         function_content='
-# ChromaDB Smart Function - Added by claude-chroma.sh v3.2
+# ChromaDB Smart Function - Added by claude-chroma.sh v3.3
 function claude-chroma --description "Start Claude with auto-detected ChromaDB config"
     set config_file ""
     set search_dir "$PWD"
@@ -1000,7 +1086,7 @@ function claude-chroma --description "Start Claude with auto-detected ChromaDB c
 end'
     else
         function_content='
-# ChromaDB Smart Function - Added by claude-chroma.sh v3.2
+# ChromaDB Smart Function - Added by claude-chroma.sh v3.3
 claude-chroma() {
     local config_file=""
     local search_dir="$PWD"
@@ -1016,7 +1102,7 @@ claude-chroma() {
 
     if [[ -n "$config_file" ]]; then
         local project_dir=$(dirname "$config_file")
-        echo "Using ChromaDB project: $project_dir"
+        echo "🧠 Using ChromaDB project: $project_dir"
         cd "$project_dir"
         if [[ $# -eq 0 ]]; then
             claude chat
@@ -1024,7 +1110,7 @@ claude-chroma() {
             claude "$@"
         fi
     else
-        echo "No ChromaDB config found - using regular Claude"
+        echo "ℹ️  No ChromaDB config found - using regular Claude"
         if [[ $# -eq 0 ]]; then
             claude chat
         else
@@ -1075,6 +1161,132 @@ migrate_from_v3() {
 }
 
 # ============================================================================
+# SHELL FUNCTION MIGRATION
+# ============================================================================
+check_broken_shell_function() {
+    print_info "Checking for broken shell functions..."
+
+    local shell_rc
+    shell_rc=$(detect_shell_rc)
+
+    if [[ ! -f "$shell_rc" ]]; then
+        return 0
+    fi
+
+    # Check if function exists and is broken (looking for old config file)
+    if grep -q "claude-chroma()" "$shell_rc" 2>/dev/null; then
+        if grep -q '\.claude/settings\.local\.json' "$shell_rc" 2>/dev/null; then
+            print_warning "Found outdated claude-chroma function in $shell_rc"
+            print_info "This function looks for the old config file location"
+
+            if prompt_yes "Update claude-chroma function to work with current version?"; then
+                backup_if_exists "$shell_rc"
+
+                if [[ "$DRY_RUN" != "1" ]]; then
+                    # Remove old function
+                    local tmp_file="${shell_rc}.tmp.$$"
+                    awk '
+                        /^[[:space:]]*claude-chroma\(\)/ { in_func=1 }
+                        in_func && /^}/ { in_func=0; next }
+                        !in_func { print }
+                    ' "$shell_rc" > "$tmp_file"
+
+                    mv "$tmp_file" "$shell_rc"
+
+                    # Add updated function
+                    local function_content='
+# ChromaDB Smart Function - Updated by claude-chroma.sh v3.3
+claude-chroma() {
+    local config_file=""
+    local search_dir="$PWD"
+
+    # Search upward for .mcp.json
+    while [[ "$search_dir" != "/" ]]; do
+        if [[ -f "$search_dir/.mcp.json" ]]; then
+            config_file="$search_dir/.mcp.json"
+            break
+        fi
+        search_dir=$(dirname "$search_dir")
+    done
+
+    if [[ -n "$config_file" ]]; then
+        local project_dir=$(dirname "$config_file")
+        echo "🧠 Using ChromaDB project: $project_dir"
+        cd "$project_dir"
+        if [[ $# -eq 0 ]]; then
+            claude chat
+        else
+            claude "$@"
+        fi
+    else
+        echo "ℹ️  No ChromaDB config found - using regular Claude"
+        if [[ $# -eq 0 ]]; then
+            claude chat
+        else
+            claude "$@"
+        fi
+    fi
+}'
+                    echo "$function_content" >> "$shell_rc"
+                    print_status "Updated claude-chroma function"
+                    print_info "Restart terminal or run: source $shell_rc"
+                else
+                    print_info "[dry-run] Would update claude-chroma function in $shell_rc"
+                fi
+            fi
+        fi
+    fi
+}
+
+# ============================================================================
+# MCP CONFIG TIMEOUT VALIDATION
+# ============================================================================
+check_mcp_timeout_settings() {
+    if [[ ! -f ".mcp.json" ]]; then
+        return 0
+    fi
+
+    print_info "Checking existing .mcp.json for timeout settings..."
+
+    # Check if timeout settings exist
+    local has_timeout_settings=0
+
+    if jq -e '.mcpServers.chroma.env.CHROMA_SERVER_KEEP_ALIVE' .mcp.json >/dev/null 2>&1; then
+        if [[ $(jq -r '.mcpServers.chroma.env.CHROMA_SERVER_KEEP_ALIVE' .mcp.json) == "0" ]]; then
+            has_timeout_settings=1
+        fi
+    fi
+
+    if [[ "$has_timeout_settings" -eq 0 ]]; then
+        print_warning "Existing .mcp.json lacks infinite timeout settings"
+        print_info "Without these settings, ChromaDB may disconnect after inactivity"
+
+        if prompt_yes "Update .mcp.json with timeout prevention settings?"; then
+            backup_if_exists ".mcp.json"
+
+            if [[ "$DRY_RUN" != "1" ]]; then
+                # Update the config with timeout settings
+                local updated_config
+                updated_config=$(jq '
+                    .mcpServers.chroma.env.CHROMA_SERVER_KEEP_ALIVE = "0" |
+                    .mcpServers.chroma.env.CHROMA_CLIENT_TIMEOUT = "0" |
+                    .mcpServers.chroma.initializationOptions.timeout = 0 |
+                    .mcpServers.chroma.initializationOptions.keepAlive = true |
+                    .mcpServers.chroma.initializationOptions.retryAttempts = 5
+                ' .mcp.json)
+
+                echo "$updated_config" > .mcp.json
+                print_status "Updated .mcp.json with timeout prevention settings"
+            else
+                print_info "[dry-run] Would update .mcp.json with timeout settings"
+            fi
+        fi
+    else
+        print_status "Timeout settings already configured correctly"
+    fi
+}
+
+# ============================================================================
 # FINAL SUMMARY
 # ============================================================================
 print_summary() {
@@ -1105,8 +1317,9 @@ print_summary() {
         echo ""
         print_info "Next steps:"
         echo "  1. cd \"$PROJECT_DIR\""
-        echo "  2. claude chat"
-        echo "     OR: ./start-claude-chroma.sh"
+        echo "  2. Run ONE of these commands:"
+        echo "     $ claude chat      (single command - do NOT type 'chat' after starting)"
+        echo "     $ ./start-claude-chroma.sh"
         echo "  3. Claude auto-initializes ChromaDB"
 
         echo ""
@@ -1197,8 +1410,10 @@ main() {
     check_prerequisites
     setup_project_directory "$project_name" "$project_path"
     migrate_from_v3
+    check_broken_shell_function
     create_directory_structure
     create_mcp_config
+    check_mcp_timeout_settings
     create_claude_md
     create_gitignore
     create_init_docs
