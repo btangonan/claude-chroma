@@ -1,10 +1,10 @@
 #!/bin/bash
 # ChromaDB setup for Claude projects - Production-ready version
-# Version 3.3.7 - Memory checkpoint reminders
-# v3.3.7 Changes:
-# - Added periodic memory checkpoint rules to prevent forgetting
-# - Every 5 interactions reminder to check for new learnings
-# - Immediate logging after solving problems or making decisions
+# Version 3.4.0 - Comprehensive CLAUDE.md template
+# v3.4.0 Changes:
+# - Replaced basic ChromaDB-only template with comprehensive project contract
+# - Added tool selection matrix, additional MCP servers, session lifecycle
+# - Includes browser automation, GitHub workflow, quality gates
 # v3.3.6 Changes:
 # - Added instruction to query existing memories at session start
 # - Claude now automatically reviews project context when starting
@@ -53,7 +53,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.3.7"
+readonly SCRIPT_VERSION="3.4.0"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -775,14 +775,12 @@ After adding memories, confirm with: **✓ Memory logged** (ignore "result is No
 
 Before proposing work, query Chroma for prior facts.
 
-**Memory Reminder**: After solving problems or making decisions, log immediately.
-
 ### Chroma Calls
 ```javascript
 // Create once:
 mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
 
-// Add (Note: returns None on success, not IDs):
+// Add:
 mcp__chroma__chroma_add_documents {
   "collection_name": "project_memory",
   "documents": ["<text>"],
@@ -806,6 +804,79 @@ Auto-propose sequential-thinking when a task has 3+ dependent steps or multiple 
 
 If I say "reason stepwise", enable for one turn, then disable.
 
+## 🌐 Browser Automation
+
+Use playwright to load pages, scrape DOM, run checks, and export screenshots or PDFs.
+
+Save artifacts to `./backups/` with timestamped filenames.
+
+Summarize results and list file paths.
+
+## 🐙 GitHub MCP
+
+Use github to fetch files, list and inspect issues and PRs, and draft PR comments.
+
+Never push or merge without explicit approval.
+
+Always show diffs, file paths, or PR numbers before proposing changes.
+
+## 🔧 Additional MCP Servers
+
+- **context7**: Library docs search. Example: `/docs react hooks`
+- **magic**: UI components and small React blocks. Example: `/ui button`
+- **sequential-thinking**: Complex planning mode as above
+
+## 🛠️ Tool Selection Matrix
+
+| Task | Tool |
+|------|------|
+| Multi-file edits | MultiEdit (if available). Otherwise propose unified diff per file |
+| Pattern search in repo | Grep MCP (not shell grep). Return matches with file paths and line numbers |
+| UI snippet or component | Magic MCP. Return self-contained file |
+| Complex analysis or planning | Sequential-thinking for one turn |
+| Docs or library behavior | context7 first. Quote relevant lines, then summarize |
+| Web page check or scrape | Playwright with artifacts saved to `./backups/` |
+
+If a listed tool is missing, state the exact server or tool name that is unavailable and ask to enable it.
+
+## 📋 Spec and Planning (Lite)
+
+For new features, run three phases:
+
+1. **/specify** user stories, functional requirements, acceptance tests
+2. **/plan** stack, architecture, constraints, performance and testing goals
+3. **/tasks** granular, test-first steps
+
+Log key spec and plan decisions to Chroma as `type:"decision"` with tags.
+
+## ✅ Quality Gates
+
+Every requirement is unambiguous, testable, and bounded.
+
+Prefer tests and unified diffs over prose.
+
+Mark uncertainty with `[VERIFY]` and propose checks.
+
+Include simple performance budgets where relevant. Example: search under 100ms at 10k rows.
+
+## 🔄 Session Lifecycle
+
+**Start**: Query Chroma for context relevant to the task. List any matches you will rely on.
+
+**Work**: Log decisions and gotchas as they happen. Keep each memory under 300 chars.
+
+**Checkpoint**: Every 30 minutes or at major milestone, summarize progress, open risks, and memories logged.
+
+**End**: Summarize changes, link artifacts in `./backups/`, and list all memories written.
+
+## 🧹 Session Hygiene
+
+Do not compact long chats.
+
+If context gets heavy, propose pruning to the last 20 turns and continue.
+
+For long outputs, write files to `./backups/` and return paths.
+
 ## 🔍 Retrieval Checklist Before Coding
 
 1. Query Chroma for related memories
@@ -813,20 +884,11 @@ If I say "reason stepwise", enable for one turn, then disable.
 3. List open PRs or issues that touch the same area
 4. Only then propose changes
 
-## 🔄 Memory Checkpoint Rules
-
-**Every 5 interactions or after completing a task**, ask yourself:
-- Did I discover any new decisions, fixes, or patterns?
-- Did the user express any preferences?
-- Did I solve any tricky problems?
-
-If yes → Log a memory immediately before continuing.
-
 ## 🏷️ Memory Taxonomy
 
 - **type**: `decision`, `fix`, `tip`, `preference`
-- **tags**: short domain keywords (e.g., `video,encode,preview`)
-- **id rule**: stable handle per fact (e.g., `encode-preview-policy`)
+- **tags**: short domain keywords. Example: `video,encode,preview`
+- **id rule**: stable handle per fact. Example: `encode-preview-policy`
 
 ### Memory Examples
 ```javascript
@@ -841,15 +903,25 @@ ids: ["repo-commit-policy"]
 
 ## 📁 Output Policy
 
-- For code: return a unified diff or a patchable file set
-- For scripts: include exact commands and paths
-- Save long outputs in `./backups/`. Use readable names. Echo paths in the reply
+For code, return unified diff or patchable file set.
+
+For scripts, include exact commands and paths.
+
+Save long outputs in `./backups/`. Use readable names. Echo paths in the reply.
 
 ## 🛡️ Safety
 
-- No secrets in `.chroma` or transcripts
-- Note licenses and third party terms when adding dependencies
-- Respect rate limits. Propose batching if needed
+No secrets in `.chroma` or transcripts.
+
+Note licenses and third party terms when adding dependencies.
+
+Respect rate limits. Propose batching if needed.
+
+## 🎯 Modes
+
+**Small change**: Skip full spec. Still log key decisions. Still show diffs.
+
+**Feature**: Run the three phases. Enforce quality gates.
 
 ## ⚡ Activation
 
