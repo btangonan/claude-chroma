@@ -1,6 +1,10 @@
 #!/bin/bash
 # ChromaDB setup for Claude projects - Production-ready version
-# Version 3.4.0 - Comprehensive CLAUDE.md template
+# Version 3.4.1 - Restored memory checkpoint rules
+# v3.4.1 Changes:
+# - Restored memory checkpoint rules that were accidentally removed in 3.4.0
+# - Added explicit reminders for long coding sessions (>10 interactions)
+# - Enhanced activation section with memory internalization steps
 # v3.4.0 Changes:
 # - Replaced basic ChromaDB-only template with comprehensive project contract
 # - Added tool selection matrix, additional MCP servers, session lifecycle
@@ -53,7 +57,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.4.0"
+readonly SCRIPT_VERSION="3.4.1"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -869,6 +873,21 @@ Include simple performance budgets where relevant. Example: search under 100ms a
 
 **End**: Summarize changes, link artifacts in `./backups/`, and list all memories written.
 
+## 📝 Memory Checkpoint Rules
+
+**Every 5 interactions or after completing a task**, ask yourself:
+- Did I discover any new decisions, fixes, or patterns?
+- Did the user express any preferences?
+- Did I solve any tricky problems?
+- Did I learn something about the codebase architecture?
+
+If yes → Log a memory immediately before continuing.
+
+**During long coding sessions** (>10 interactions):
+- Pause and review: Have I logged recent learnings?
+- Check: Are there unrecorded decisions or fixes?
+- Remember: Each memory helps future sessions
+
 ## 🧹 Session Hygiene
 
 Do not compact long chats.
@@ -936,7 +955,13 @@ mcp__chroma__chroma_query_documents {
 }
 ```
 
-Acknowledge: **Contract loaded. Using Chroma project_memory. Reviewing existing memories.**
+Then review the memories and internalize:
+- Key architectural decisions made
+- User preferences to maintain
+- Known fixes and gotchas to avoid
+- Patterns established in the codebase
+
+Acknowledge: **Contract loaded. Using Chroma project_memory. Found [N] existing memories.**
 
 If tools are missing, name them and stop before continuing.
 
