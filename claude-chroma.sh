@@ -1,6 +1,14 @@
 #!/bin/bash
 # ChromaDB setup for Claude projects - Production-ready version
-# Version 3.3.5 - Fix confusing 'result is None' message
+# Version 3.3.7 - Memory checkpoint reminders
+# v3.3.7 Changes:
+# - Added periodic memory checkpoint rules to prevent forgetting
+# - Every 5 interactions reminder to check for new learnings
+# - Immediate logging after solving problems or making decisions
+# v3.3.6 Changes:
+# - Added instruction to query existing memories at session start
+# - Claude now automatically reviews project context when starting
+# - Better continuity between sessions
 # v3.3.5 Changes:
 # - Updated CLAUDE.md to handle ChromaDB returning None on success
 # - Changed memory logging instruction to not expect ID back
@@ -45,7 +53,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.3.5"
+readonly SCRIPT_VERSION="3.3.7"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -767,6 +775,8 @@ After adding memories, confirm with: **✓ Memory logged** (ignore "result is No
 
 Before proposing work, query Chroma for prior facts.
 
+**Memory Reminder**: After solving problems or making decisions, log immediately.
+
 ### Chroma Calls
 ```javascript
 // Create once:
@@ -803,6 +813,15 @@ If I say "reason stepwise", enable for one turn, then disable.
 3. List open PRs or issues that touch the same area
 4. Only then propose changes
 
+## 🔄 Memory Checkpoint Rules
+
+**Every 5 interactions or after completing a task**, ask yourself:
+- Did I discover any new decisions, fixes, or patterns?
+- Did the user express any preferences?
+- Did I solve any tricky problems?
+
+If yes → Log a memory immediately before continuing.
+
 ## 🏷️ Memory Taxonomy
 
 - **type**: `decision`, `fix`, `tip`, `preference`
@@ -836,7 +855,16 @@ ids: ["repo-commit-policy"]
 
 Read this file at session start.
 
-Acknowledge: **Contract loaded. Using Chroma project_memory.**
+First action: Query existing memories to understand project context:
+```javascript
+mcp__chroma__chroma_query_documents {
+  "collection_name": "project_memory",
+  "query_texts": ["project decisions preferences fixes"],
+  "n_results": 10
+}
+```
+
+Acknowledge: **Contract loaded. Using Chroma project_memory. Reviewing existing memories.**
 
 If tools are missing, name them and stop before continuing.
 
