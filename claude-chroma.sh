@@ -771,7 +771,7 @@ Log after any confirmed fix, decision, gotcha, or preference.
 - **metadatas**: `{ "type":"decision|fix|tip|preference", "tags":"comma,separated", "source":"file|PR|spec|issue" }`
 - **ids**: stable string if updating the same fact.
 
-After adding memories, confirm with: **✓ Memory logged** (ignore "result is None" - that's normal)
+After adding memories, confirm with: **✓ Memory logged** (ignore "result is None" - that'\''s normal)
 
 Before proposing work, query Chroma for prior facts.
 
