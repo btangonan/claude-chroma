@@ -74,7 +74,11 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.5.2"
+readonly SCRIPT_VERSION="3.5.2-hotfix"
+
+# opt-in flags (default lean)
+MINIMAL="${MINIMAL:-1}"
+FULL="${FULL:-0}"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -1872,6 +1876,14 @@ main() {
                 echo "claude-chroma.sh version $SCRIPT_VERSION"
                 exit 0
                 ;;
+            --minimal)
+                MINIMAL=1
+                FULL=0
+                ;;
+            --full)
+                FULL=1
+                MINIMAL=0
+                ;;
             --collection)
                 shift
                 CHROMA_COLLECTION_OVERRIDE="${1:-}"
@@ -1984,7 +1996,12 @@ main() {
     create_gitignore
     create_init_docs
     create_launcher
-    setup_shell_function
+    # Shell function is OFF by default; only in --full mode
+    if [[ "$FULL" == "1" ]]; then
+        setup_shell_function
+    else
+        print_info "Lean mode: skipping shell function installer (use --full to enable)"
+    fi
     add_to_registry
     print_summary
 }
