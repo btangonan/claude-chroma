@@ -1,0 +1,68 @@
+--- a/claude-chroma.sh
++++ b/claude-chroma.sh
+@@ -76,7 +76,7 @@ umask 077
+ # GLOBALS
+ # ============================================================================
+ readonly SCRIPT_VERSION="3.4.5"
+-readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
++readonly SCRIPT_VERSION="3.5.0"
++readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
+
+ # Environment flags
+ DRY_RUN="${DRY_RUN:-0}"
+@@ -945,6 +945,19 @@ setup_project_directory() {
+     PROJECT_NAME="$(prompt_for_input "Project name (letters, numbers, spaces only)" "")"
+   fi
+
++  # Derive a per-project collection name (letters, numbers, underscore)
++  derive_collection_name() {
++    local base="${PROJECT_NAME:-$(basename "$PWD")}"
++    # normalize: lower, replace non [a-z0-9_] with _
++    local norm
++    norm="$(printf '%s' "$base" | tr '[:upper:] .-/' '[:lower:]___' | sed 's/[^a-z0-9_]/_/g')"
++    # clamp to reasonable length
++    norm="${norm:0:48}"
++    printf '%s_memory' "$norm"
++  }
++
++  PROJECT_COLLECTION="$(derive_collection_name)"
++
+   # Create directory structure
+   print_debug "Creating directory structure..."
+   create_directory_structure
+@@ -339,7 +352,7 @@ readonly MCP_CONFIG_TEMPLATE='{
+       "CHROMA_DATA_DIR": "{{PROJECT_DIR}}/.chroma"
+     },
+     "init_commands": [
+-  "collection_name": "project_memory",
++  "collection_name": "{{PROJECT_COLLECTION}}",
+   "embedding_function_name": "default"
+     ]
+   },
+@@ -356,7 +369,7 @@ readonly MCP_CONFIG_WITH_TIMEOUT='{
+       "CHROMA_DATA_DIR": "{{PROJECT_DIR}}/.chroma"
+     },
+     "init_commands": [
+-  "collection_name": "project_memory",
++  "collection_name": "{{PROJECT_COLLECTION}}",
+   "embedding_function_name": "default"
+     ]
+   },
+@@ -533,7 +546,8 @@ create_directory_structure() {
+   echo "${YELLOW}Creating project structure...${NC}"
+
+   # Create necessary directories
+-  local dirs=(".chroma" "claudedocs")
++  # Added .chroma/context for always-loaded reference docs
++  local dirs=(".chroma" ".chroma/context" "claudedocs" "bin")
+   for dir in "${dirs[@]}"; do
+     if [[ "$DRY_RUN" -eq 1 ]]; then
+       echo "[DRY RUN] Would create directory: $dir"
+@@ -598,6 +612,7 @@ create_mcp_config() {
+   # Replace placeholders with actual paths
+   config="${config//\{\{PROJECT_DIR\}\}/$PROJECT_DIR}"
+   config="${config//\{\{PROJECT_NAME\}\}/$PROJECT_NAME}"
++  config="${config//\{\{PROJECT_COLLECTION\}\}/$PROJECT_COLLECTION}"
+
+   write_file_safe ".mcp.json" "$config"
+ }

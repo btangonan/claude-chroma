@@ -1,0 +1,223 @@
+--- a/claude-chroma.sh
++++ b/claude-chroma.sh
+@@ -2,6 +2,9 @@
+ # ChromaDB setup for Claude projects - Production-ready version
+-# Version 3.4.5 - Remove 'chat' command to prevent auto-typing bug
++# Version 3.5.0 - Project isolation and memory enhancements
++# v3.5.0 Changes:
++# - Project-specific collections prevent cross-contamination
++# - Context directory for always-loaded references
++# - Memory statistics and project registry
+ # v3.4.5 Changes:
+ # - Removed all 'claude' references - just use 'claude' command
+@@ -74,7 +77,7 @@ umask 077
+ # ============================================================================
+ # GLOBALS
+ # ============================================================================
+-readonly SCRIPT_VERSION="3.4.5"
++readonly SCRIPT_VERSION="3.5.0"
+ readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
+
+@@ -339,7 +342,7 @@ readonly MCP_CONFIG_TEMPLATE='{
+       "CHROMA_DATA_DIR": "{{PROJECT_DIR}}/.chroma"
+     },
+     "init_commands": [
+-  "collection_name": "project_memory",
++  "collection_name": "{{PROJECT_COLLECTION}}",
+   "embedding_function_name": "default"
+     ]
+@@ -356,7 +359,7 @@ readonly MCP_CONFIG_WITH_TIMEOUT='{
+       "CHROMA_DATA_DIR": "{{PROJECT_DIR}}/.chroma"
+     },
+     "init_commands": [
+-  "collection_name": "project_memory",
++  "collection_name": "{{PROJECT_COLLECTION}}",
+   "embedding_function_name": "default"
+     ]
+@@ -533,7 +536,8 @@ create_directory_structure() {
+   echo "${YELLOW}Creating project structure...${NC}"
+
+   # Create necessary directories
+-  local dirs=(".chroma" "claudedocs")
++  # Added .chroma/context for always-loaded reference docs and bin for scripts
++  local dirs=(".chroma" ".chroma/context" "claudedocs" "bin")
+   for dir in "${dirs[@]}"; do
+     if [[ "$DRY_RUN" -eq 1 ]]; then
+       echo "[DRY RUN] Would create directory: $dir"
+@@ -541,6 +545,82 @@ create_directory_structure() {
+       mkdir -p "$dir"
+     fi
+   done
++
++  # Create chroma-stats.py if it doesn't exist
++  if [[ ! -f "bin/chroma-stats.py" ]]; then
++    write_file_safe "bin/chroma-stats.py" '#!/usr/bin/env python3
++"""
++Chroma statistics helper for ChromaDB projects.
++Reports memory count and breakdown by type.
++"""
++import os
++import sys
++import json
++import chromadb
++from chromadb.config import Settings
++
++def main():
++    COL = os.environ.get("CHROMA_COLLECTION", "project_memory")
++    DATA = os.environ.get("CHROMA_DATA_DIR", os.path.join(os.getcwd(), ".chroma"))
++
++    try:
++        client = chromadb.PersistentClient(path=DATA, settings=Settings(allow_reset=False))
++        try:
++            col = client.get_collection(name=COL)
++        except:
++            print(json.dumps({"collection": COL, "total": 0, "by_type": {}, "status": "new_collection"}))
++            return
++
++        result = col.get(include=["metadatas"], limit=100000)
++        types = {}
++        for meta in (result.get("metadatas") or []):
++            t = (meta or {}).get("type", "unknown")
++            types[t] = types.get(t, 0) + 1
++
++        total = sum(types.values())
++        print(json.dumps({"collection": COL, "total": total, "by_type": types, "status": "success"}))
++
++    except Exception as e:
++        print(json.dumps({"collection": COL, "total": 0, "by_type": {}, "status": "error", "error": str(e)}))
++        sys.exit(1)
++
++if __name__ == "__main__":
++    main()
++'
++    chmod +x "bin/chroma-stats.py" 2>/dev/null || true
++  fi
++
++  # Create seed context file
++  local context_file=".chroma/context/00_PROJECT_CONVENTIONS.md"
++  if [[ ! -f "$context_file" ]]; then
++    write_file_safe "$context_file" "# Project Conventions
++
++## Code Style
++- Follow existing patterns in the codebase
++- Use consistent naming conventions
++- Prefer clarity over cleverness
++
++## Architecture Decisions
++- Document major decisions in ADRs
++- Keep components loosely coupled
++- Test critical paths
++
++## Notes
++Add project-specific conventions here as they emerge."
++  fi
++}
++
++# ============================================================================
++# PROJECT REGISTRY
++# ============================================================================
++add_to_registry() {
++  local registry="$HOME/.claude/chroma_projects.yml"
++  local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
++
++  mkdir -p "$(dirname "$registry")"
++
++  if ! grep -Fq "path: $PROJECT_DIR" "$registry" 2>/dev/null; then
++    printf -- "- name: %s\n  path: %s\n  collection: %s\n  data_dir: %s/.chroma\n  created_at: %s\n  sessions: 0\n  last_used: null\n\n" \
++      "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" "$PROJECT_DIR" "$timestamp" >> "$registry"
++  fi
+ }
+
+ # ============================================================================
+@@ -598,6 +678,7 @@ create_mcp_config() {
+   # Replace placeholders with actual paths
+   config="${config//\{\{PROJECT_DIR\}\}/$PROJECT_DIR}"
+   config="${config//\{\{PROJECT_NAME\}\}/$PROJECT_NAME}"
++  config="${config//\{\{PROJECT_COLLECTION\}\}/$PROJECT_COLLECTION}"
+
+   write_file_safe ".mcp.json" "$config"
+ }
+@@ -945,6 +1026,19 @@ setup_project_directory() {
+     PROJECT_NAME="$(prompt_for_input "Project name (letters, numbers, spaces only)" "")"
+   fi
+
++  # Derive a per-project collection name (letters, numbers, underscore)
++  derive_collection_name() {
++    local base="${PROJECT_NAME:-$(basename "$PWD")}"
++    # normalize: lower, replace non [a-z0-9_] with _
++    local norm
++    norm="$(printf '%s' "$base" | tr '[:upper:] .-/' '[:lower:]___' | sed 's/[^a-z0-9_]/_/g')"
++    # clamp to reasonable length
++    norm="${norm:0:48}"
++    printf '%s_memory' "$norm"
++  }
++
++  PROJECT_COLLECTION="$(derive_collection_name)"
++
+   # Create directory structure
+   print_debug "Creating directory structure..."
+   create_directory_structure
+@@ -976,6 +1070,9 @@ setup_project_directory() {
+   # Create launcher script
+   create_launcher_script
+
++  # Add to project registry
++  add_to_registry
++
+   print_success "✓ Project setup complete!"
+ }
+
+@@ -1075,7 +1172,7 @@ create_claude_md() {
+
+ ## 🧠 Project Memory (Chroma)
+
+-Use server \`chroma\`. Collection \`project_memory\`.
++Use server \`chroma\`. Collection \`${PROJECT_COLLECTION}\`.
+
+ Log after any confirmed fix, decision, gotcha, or preference.
+
+@@ -1091,11 +1188,11 @@ Before proposing work, query Chroma for prior facts.
+ ### Chroma Calls
+ \`\`\`javascript
+ // Create once:
+-mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
++mcp__chroma__chroma_create_collection { "collection_name": "${PROJECT_COLLECTION}" }
+
+ // Add:
+ mcp__chroma__chroma_add_documents {
+-  "collection_name": "project_memory",
++  "collection_name": "${PROJECT_COLLECTION}",
+   "documents": ["<text>"],
+   "metadatas": [{"type":"<type>","tags":"a,b,c","source":"<src>"}],
+   "ids": ["<stable-id>"]
+@@ -1103,7 +1200,7 @@ mcp__chroma__chroma_add_documents {
+
+ // Query:
+ mcp__chroma__chroma_query_documents {
+-  "collection_name": "project_memory",
++  "collection_name": "${PROJECT_COLLECTION}",
+   "query_texts": ["<query>"],
+   "n_results": 5
+ }
+@@ -1258,7 +1355,7 @@ We need:
+ 4. **Query collection**:
+    \`\`\`javascript
+    mcp__chroma__chroma_query_documents {
+-     "collection_name": "project_memory",
++     "collection_name": "${PROJECT_COLLECTION}",
+      "query_texts": ["python async error handling"],
+      "n_results": 5
+    }
+@@ -1267,10 +1364,15 @@ We need:
+ ## ⚡ Activation
+
+ Read this file at session start. Query existing memories relevant to the current task.
++Then load any always-on context files:
++- Read all Markdown files in \`.chroma/context/\` (titles + key bullets)
++- Cite which ones you used
+
+-Acknowledge: **Contract loaded. Using Chroma project_memory. Found [N] existing memories.**
++Run \`bin/chroma-stats.py\` if it exists and announce:
++**Contract loaded. Using Chroma ${PROJECT_COLLECTION}. Found [N] memories (by type ...).**
+
+ If Chroma MCP is missing, state "Chroma MCP server not available" and continue.

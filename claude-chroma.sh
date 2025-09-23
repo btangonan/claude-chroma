@@ -74,7 +74,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.4.5"
+readonly SCRIPT_VERSION="3.5.0"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -339,7 +339,7 @@ This local reminder ensures you maintain memory discipline in this project.
 If yes → Log memory IMMEDIATELY:
 ```javascript
 mcp__chroma__chroma_add_documents {
-  "collection_name": "project_memory",
+  "collection_name": "${PROJECT_COLLECTION}",
   "documents": ["<discovery under 300 chars>"],
   "metadatas": [{"type":"decision|fix|tip|preference","tags":"relevant,tags","source":"file"}],
   "ids": ["<unique-id>"]
@@ -356,7 +356,7 @@ mcp__chroma__chroma_add_documents {
 Always query existing memories first:
 ```javascript
 mcp__chroma__chroma_query_documents {
-  "collection_name": "project_memory",
+  "collection_name": "${PROJECT_COLLECTION}",
   "query_texts": ["project decisions preferences fixes patterns"],
   "n_results": 10
 }
@@ -983,7 +983,7 @@ setup_project_directory() {
 create_directory_structure() {
     print_info "Creating directory structure..."
 
-    local dirs=(".chroma" "claudedocs")
+    local dirs=(".chroma" ".chroma/context" "claudedocs" "bin")
     for dir in "${dirs[@]}"; do
         if [[ ! -d "$dir" ]]; then
             if [[ "$DRY_RUN" == "1" ]]; then
@@ -1075,7 +1075,7 @@ create_claude_md() {
 
 ## 🧠 Project Memory (Chroma)
 
-Use server `chroma`. Collection `project_memory`.
+Use server `chroma`. Collection `${PROJECT_COLLECTION}`.
 
 Log after any confirmed fix, decision, gotcha, or preference.
 
@@ -1091,11 +1091,11 @@ Before proposing work, query Chroma for prior facts.
 ### Chroma Calls
 ```javascript
 // Create once:
-mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
+mcp__chroma__chroma_create_collection { "collection_name": "${PROJECT_COLLECTION}" }
 
 // Add:
 mcp__chroma__chroma_add_documents {
-  "collection_name": "project_memory",
+  "collection_name": "${PROJECT_COLLECTION}",
   "documents": ["<text>"],
   "metadatas": [{"type":"<type>","tags":"a,b,c","source":"<src>"}],
   "ids": ["<stable-id>"]
@@ -1103,7 +1103,7 @@ mcp__chroma__chroma_add_documents {
 
 // Query:
 mcp__chroma__chroma_query_documents {
-  "collection_name": "project_memory",
+  "collection_name": "${PROJECT_COLLECTION}",
   "query_texts": ["<query>"],
   "n_results": 5
 }
@@ -1258,7 +1258,7 @@ Read this file at session start.
 First action: Query existing memories to understand project context:
 ```javascript
 mcp__chroma__chroma_query_documents {
-  "collection_name": "project_memory",
+  "collection_name": "${PROJECT_COLLECTION}",
   "query_texts": ["project decisions preferences fixes"],
   "n_results": 10
 }
@@ -1270,7 +1270,12 @@ Then review the memories and internalize:
 - Known fixes and gotchas to avoid
 - Patterns established in the codebase
 
-Acknowledge: **Contract loaded. Using Chroma project_memory. Found [N] existing memories.**
+Then load any always-on context files:
+- Read all Markdown files in `.chroma/context/` (titles + key bullets)
+- Cite which ones you used
+
+Run `bin/chroma-stats.py` if it exists and announce:
+**Contract loaded. Using Chroma ${PROJECT_COLLECTION}. Found [N] memories (by type ...).**
 
 If tools are missing, name them and stop before continuing.
 
@@ -1367,13 +1372,13 @@ claude
 
 ### Create Collection
 ```javascript
-mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
+mcp__chroma__chroma_create_collection { "collection_name": "${PROJECT_COLLECTION}" }
 ```
 
 ### Test Collection
 ```javascript
 mcp__chroma__chroma_query_documents {
-  "collection_name": "project_memory",
+  "collection_name": "${PROJECT_COLLECTION}",
   "query_texts": ["test"],
   "n_results": 5
 }
@@ -1382,7 +1387,7 @@ mcp__chroma__chroma_query_documents {
 ### Add Memory
 ```javascript
 mcp__chroma__chroma_add_documents {
-  "collection_name": "project_memory",
+  "collection_name": "${PROJECT_COLLECTION}",
   "documents": ["Your memory text here"],
   "metadatas": [{
     "type": "tip",
@@ -1765,6 +1770,23 @@ print_summary() {
 }
 
 # ============================================================================
+# PROJECT REGISTRY
+# ============================================================================
+add_to_registry() {
+    local registry="$HOME/.claude/chroma_projects.yml"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Create registry directory if needed
+    mkdir -p "$(dirname "$registry")"
+
+    # Add entry if not already present
+    if ! grep -Fq "path: $PROJECT_DIR" "$registry" 2>/dev/null; then
+        printf -- "- name: %s\n  path: %s\n  collection: %s\n  data_dir: %s/.chroma\n  created_at: %s\n  sessions: 0\n  last_used: null\n\n" \
+            "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" "$PROJECT_DIR" "$timestamp" >> "$registry"
+    fi
+}
+
+# ============================================================================
 # MAIN EXECUTION
 # ============================================================================
 main() {
@@ -1842,6 +1864,19 @@ main() {
     # Run setup
     check_prerequisites
     setup_project_directory "$project_name" "$project_path"
+
+    # Derive a per-project collection name
+    derive_collection_name() {
+        local base="${PROJECT_NAME:-$(basename "$PWD")}"
+        # normalize: lower, replace non [a-z0-9_] with _
+        local norm
+        norm="$(printf '%s' "$base" | tr '[:upper:] .-/' '[:lower:]___' | sed 's/[^a-z0-9_]/_/g')"
+        # clamp to reasonable length
+        norm="${norm:0:48}"
+        printf '%s_memory' "$norm"
+    }
+    PROJECT_COLLECTION="$(derive_collection_name)"
+
     migrate_from_v3
     check_broken_shell_function
     create_directory_structure
@@ -1854,6 +1889,7 @@ main() {
     create_init_docs
     create_launcher
     setup_shell_function
+    add_to_registry
     print_summary
 }
 

@@ -1,0 +1,56 @@
+--- a/claude-chroma.sh
++++ b/claude-chroma.sh
+@@ -1075,7 +1075,7 @@ create_claude_md() {
+
+ ## 🧠 Project Memory (Chroma)
+
+-Use server \`chroma\`. Collection \`project_memory\`.
++Use server \`chroma\`. Collection \`${PROJECT_COLLECTION}\`.
+
+ Log after any confirmed fix, decision, gotcha, or preference.
+
+@@ -1091,11 +1091,11 @@ Before proposing work, query Chroma for prior facts.
+ ### Chroma Calls
+ \`\`\`javascript
+ // Create once:
+-mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
++mcp__chroma__chroma_create_collection { "collection_name": "${PROJECT_COLLECTION}" }
+
+ // Add:
+ mcp__chroma__chroma_add_documents {
+-  "collection_name": "project_memory",
++  "collection_name": "${PROJECT_COLLECTION}",
+   "documents": ["<text>"],
+   "metadatas": [{"type":"<type>","tags":"a,b,c","source":"<src>"}],
+   "ids": ["<stable-id>"]
+@@ -1103,7 +1103,7 @@ mcp__chroma__chroma_add_documents {
+
+ // Query:
+ mcp__chroma__chroma_query_documents {
+-  "collection_name": "project_memory",
++  "collection_name": "${PROJECT_COLLECTION}",
+   "query_texts": ["<query>"],
+   "n_results": 5
+ }
+@@ -1258,7 +1258,7 @@ We need:
+ 4. **Query collection**:
+    \`\`\`javascript
+    mcp__chroma__chroma_query_documents {
+-     "collection_name": "project_memory",
++     "collection_name": "${PROJECT_COLLECTION}",
+      "query_texts": ["python async error handling"],
+      "n_results": 5
+    }
+@@ -1267,10 +1267,15 @@ We need:
+ ## ⚡ Activation
+
+ Read this file at session start. Query existing memories relevant to the current task.
++Then load any always-on context files:
++- Read all Markdown files in \`.chroma/context/\` (titles + key bullets)
++- Cite which ones you used
+
+-Acknowledge: **Contract loaded. Using Chroma project_memory. Found [N] existing memories.**
++Run \`bin/chroma-stats.py\` if it exists and announce:
++**Contract loaded. Using Chroma ${PROJECT_COLLECTION}. Found [N] memories (by type ...).**
+
+-If Chroma MCP is missing, state "Chroma MCP server not available" and continue.
