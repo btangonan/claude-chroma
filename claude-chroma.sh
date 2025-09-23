@@ -74,7 +74,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.5.1"
+readonly SCRIPT_VERSION="3.5.2"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -108,13 +108,11 @@ on_err() {
 rollback_changes() {
     if [[ ${#TOUCHED_FILES[@]} -gt 0 ]]; then
         for file in "${TOUCHED_FILES[@]}"; do
-            if [[ -f "$file.backup."* ]]; then
+            if compgen -G "$file.backup.*" >/dev/null; then
                 local latest_backup
                 latest_backup=$(ls -t "$file.backup."* 2>/dev/null | head -1 || true)
-                if [[ -n "$latest_backup" ]]; then
-                    mv -f "$latest_backup" "$file" 2>/dev/null && \
-                        print_info "Restored: $file" || true
-                fi
+                [[ -n "$latest_backup" ]] && mv -f "$latest_backup" "$file" 2>/dev/null && \
+                    print_info "Restored: $file" || true
             else
                 rm -f "$file" 2>/dev/null && \
                     print_info "Removed: $file" || true
@@ -346,7 +344,8 @@ check_global_memory_rules() {
     # READ-ONLY check if global CLAUDE.md has memory checkpoint rules
     # Returns: 0 if rules exist, 1 if not, 2 if file doesn't exist
 
-    local readonly GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
+    local readonly GLOBAL_DIR="${XDG_CONFIG_HOME:-$HOME/.claude}"
+    local readonly GLOBAL_CLAUDE="$GLOBAL_DIR/CLAUDE.md"
 
     # Check if global file exists (READ-ONLY)
     if [[ ! -f "$GLOBAL_CLAUDE" ]]; then
@@ -410,7 +409,7 @@ Always query existing memories first:
 mcp__chroma__chroma_query_documents {
   "collection_name": "${PROJECT_COLLECTION}",
   "query_texts": ["project decisions preferences fixes patterns"],
-  "n_results": 10
+  "n_results": 5  // raise to 10 only if <3 strong hits
 }
 ```
 
@@ -470,7 +469,8 @@ check_global_settings_memory() {
     # READ-ONLY check if global settings.local.json has memory instructions
     # Returns: 0 if has memory instructions, 1 if not, 2 if file doesn't exist or invalid
 
-    local readonly GLOBAL_SETTINGS="$HOME/.claude/settings.local.json"
+    local readonly GLOBAL_DIR="${XDG_CONFIG_HOME:-$HOME/.claude}"
+    local readonly GLOBAL_SETTINGS="$GLOBAL_DIR/settings.local.json"
 
     # Check if global file exists (READ-ONLY)
     if [[ ! -f "$GLOBAL_SETTINGS" ]]; then
@@ -1317,7 +1317,7 @@ First action: Query existing memories to understand project context:
 mcp__chroma__chroma_query_documents {
   "collection_name": "${PROJECT_COLLECTION}",
   "query_texts": ["project decisions preferences fixes"],
-  "n_results": 10
+  "n_results": 5  // raise to 10 only if <3 strong hits
 }
 ```
 
@@ -1496,7 +1496,10 @@ if ! jq -e . .mcp.json >/dev/null 2>&1; then
     exit 1
 fi
 
-# Start Claude - it will auto-detect .mcp.json
+# Optional: bump registry usage if helper exists
+if [[ -x "bin/registry.sh" ]]; then
+  bin/registry.sh bump "$PWD" || true
+fi
 echo "🚀 Starting Claude with ChromaDB..."
 exec claude "$@"'
 

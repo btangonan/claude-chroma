@@ -1,0 +1,27 @@
+name: CI
+on:
+  push:
+    branches: [ master ]
+  pull_request: {}
+jobs:
+  lint-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq shellcheck python3
+          pipx install uv || pip install --user uv || true
+      - name: ShellCheck
+        run: shellcheck -e SC2016,SC2001 claude-chroma.sh bin/registry.sh
+      - name: Smoke test (dry run)
+        run: |
+          mkdir -p /tmp/cc-test && cd /tmp/cc-test
+          cp -R "${GITHUB_WORKSPACE}/." .
+          DRY_RUN=1 ./claude-chroma.sh test-ci "$PWD"
+      - name: Stats helper runs with uvx
+        run: |
+          cd /tmp/cc-test
+          chmod +x bin/chroma-stats.py
+          ./bin/chroma-stats.py | head -1 || true
