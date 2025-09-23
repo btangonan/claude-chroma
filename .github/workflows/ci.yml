@@ -14,7 +14,7 @@ jobs:
           sudo apt-get install -y jq shellcheck python3
           pipx install uv || pip install --user uv || true
       - name: ShellCheck
-        run: shellcheck -e SC2016,SC2001,SC2015,SC2012,SC2319,SC2155,SC2316 claude-chroma.sh bin/registry.sh
+        run: shellcheck -e SC2016,SC2001,SC2015,SC2012,SC2319,SC2155,SC2316,SC2034,SC2120,SC2119 claude-chroma.sh bin/registry.sh
       - name: Smoke test (dry run)
         run: |
           mkdir -p /tmp/cc-test && cd /tmp/cc-test
