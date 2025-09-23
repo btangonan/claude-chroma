@@ -1,18 +1,10 @@
 #!/bin/bash
 # ChromaDB setup for Claude projects - Production-ready version
-# Version 3.4.5 - Remove 'chat' command to prevent auto-typing bug
-# v3.4.5 Changes:
-# - Removed all 'claude' references - just use 'claude' command
-# - Prevents Claude from auto-typing 'chat' and going on coding sprees
-# v3.4.4 Changes:
-# - CRITICAL FIX: Fixed ERR trap causing .mcp.json and CLAUDE.md to be deleted
-# - The ERR trap was firing during expected non-zero returns, causing rollback
-# - Now properly disables both 'set -e' AND the ERR trap when checking global files
-# v3.4.3 Changes:
-# - Added READ-ONLY detection of global settings.local.json memory instructions
-# - NEVER modifies global ~/.claude/settings.local.json (safety guaranteed)
-# - Creates/updates project .claude/settings.local.json with memory instructions
-# - Merges memory instructions with existing project settings if present
+# Version 3.5.3
+# v3.5.3 Changes:
+# - Externalized CLAUDE.md to templates/CLAUDE.md.tpl rendered via envsubst
+# - Shell function installer gated behind --full
+# - Defaults: minimal=1, full=0
 # v3.4.2 Changes:
 # - Added READ-ONLY detection of global memory checkpoint rules
 # - NEVER modifies global ~/.claude/CLAUDE.md (safety guaranteed)
@@ -74,12 +66,12 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.5.2-hotfix"
+readonly SCRIPT_VERSION="3.5.3"
 
 # opt-in flags (default lean)
 MINIMAL="${MINIMAL:-1}"
 FULL="${FULL:-0}"
-readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
+readonly CHROMA_MCP_VERSION="${CHROMA_MCP_VERSION:-chroma-mcp==0.2.0}"
 
 # Environment flags
 DRY_RUN="${DRY_RUN:-0}"
@@ -893,6 +885,11 @@ prompt_yes() {
 check_prerequisites() {
     print_header "🔍 Checking Prerequisites"
 
+    # Check for CHROMA_MCP_VERSION override
+    if [[ -n "${CHROMA_MCP_VERSION:-}" ]] && [[ "$CHROMA_MCP_VERSION" != "chroma-mcp==0.2.0" ]]; then
+        print_info "Using custom CHROMA_MCP_VERSION: $CHROMA_MCP_VERSION"
+    fi
+
     local has_issues=false
 
     # Check for jq (required for JSON operations)
@@ -1039,7 +1036,7 @@ setup_project_directory() {
 create_directory_structure() {
     print_info "Creating directory structure..."
 
-    local dirs=(".chroma" ".chroma/context" "claudedocs" "bin")
+    local dirs=(".chroma" ".chroma/context" "claudedocs" "bin" "templates")
     for dir in "${dirs[@]}"; do
         if [[ ! -d "$dir" ]]; then
             if [[ "$DRY_RUN" == "1" ]]; then
@@ -1067,8 +1064,10 @@ create_mcp_config() {
         exit 1
     fi
 
-    # Ensure data directory doesn't escape project
-    assert_within "$data_dir" "$(pwd)"
+    # Ensure data directory doesn't escape project (skip in dry-run since dir doesn't exist)
+    if [[ "$DRY_RUN" != "1" ]]; then
+        assert_within "$data_dir" "$(pwd)"
+    fi
 
     if [[ -f ".mcp.json" ]]; then
         print_info "Existing .mcp.json found"
@@ -1122,234 +1121,41 @@ create_mcp_config() {
 }
 
 create_claude_md() {
-    print_info "Creating CLAUDE.md instructions..."
+    print_info "Creating CLAUDE.md from template..."
 
     if [[ -f "CLAUDE.md" ]]; then
         print_info "CLAUDE.md already exists"
-        print_info "Backing up your existing instructions and creating ChromaDB configuration..."
         backup_claude_md
     fi
 
-    local content='# CLAUDE.md — Project Contract
-
-**Purpose**: Follow this in every session for this repo. Keep memory sharp. Keep outputs concrete. Cut rework.
-
-## 🧠 Project Memory (Chroma)
-
+    # Ensure template exists or seed a minimal one
+    if [[ ! -f "templates/CLAUDE.md.tpl" ]]; then
+        print_warning "templates/CLAUDE.md.tpl not found. Seeding minimal template..."
+        if [[ "$DRY_RUN" != "1" ]]; then
+            cat > templates/CLAUDE.md.tpl <<'TPL'
+# CLAUDE.md — Project Contract
 Use server `chroma`. Collection `${PROJECT_COLLECTION}`.
-
-Log after any confirmed fix, decision, gotcha, or preference.
-
-**Schema:**
-- **documents**: 1–2 sentences. Under 300 chars.
-- **metadatas**: `{ "type":"decision|fix|tip|preference", "tags":"comma,separated", "source":"file|PR|spec|issue" }`
-- **ids**: stable string if updating the same fact.
-
-After adding memories, confirm with: **✓ Memory logged** (ignore "result is None" - that'\''s normal)
-
 Before proposing work, query Chroma for prior facts.
-
-### Chroma Calls
 ```javascript
-// Create once:
 mcp__chroma__chroma_create_collection { "collection_name": "${PROJECT_COLLECTION}" }
-
-// Add:
-mcp__chroma__chroma_add_documents {
-  "collection_name": "${PROJECT_COLLECTION}",
-  "documents": ["<text>"],
-  "metadatas": [{"type":"<type>","tags":"a,b,c","source":"<src>"}],
-  "ids": ["<stable-id>"]
-}
-
-// Query:
-mcp__chroma__chroma_query_documents {
-  "collection_name": "${PROJECT_COLLECTION}",
-  "query_texts": ["<query>"],
-  "n_results": 5
-}
+mcp__chroma__chroma_query_documents { "collection_name": "${PROJECT_COLLECTION}", "query_texts": ["project decisions preferences fixes"], "n_results": 5 }
 ```
-
-## 🧩 Deterministic Reasoning
-
-Default: concise, action oriented.
-
-Auto-propose sequential-thinking when a task has 3+ dependent steps or multiple tradeoffs. Enable for one turn, then disable.
-
-If I say "reason stepwise", enable for one turn, then disable.
-
-## 🌐 Browser Automation
-
-Use playwright to load pages, scrape DOM, run checks, and export screenshots or PDFs.
-
-Save artifacts to `./backups/` with timestamped filenames.
-
-Summarize results and list file paths.
-
-## 🐙 GitHub MCP
-
-Use github to fetch files, list and inspect issues and PRs, and draft PR comments.
-
-Never push or merge without explicit approval.
-
-Always show diffs, file paths, or PR numbers before proposing changes.
-
-## 🔧 Additional MCP Servers
-
-- **context7**: Library docs search. Example: `/docs react hooks`
-- **magic**: UI components and small React blocks. Example: `/ui button`
-- **sequential-thinking**: Complex planning mode as above
-
-## 🛠️ Tool Selection Matrix
-
-| Task | Tool |
-|------|------|
-| Multi-file edits | MultiEdit (if available). Otherwise propose unified diff per file |
-| Pattern search in repo | Grep MCP (not shell grep). Return matches with file paths and line numbers |
-| UI snippet or component | Magic MCP. Return self-contained file |
-| Complex analysis or planning | Sequential-thinking for one turn |
-| Docs or library behavior | context7 first. Quote relevant lines, then summarize |
-| Web page check or scrape | Playwright with artifacts saved to `./backups/` |
-
-If a listed tool is missing, state the exact server or tool name that is unavailable and ask to enable it.
-
-## 📋 Spec and Planning (Lite)
-
-For new features, run three phases:
-
-1. **/specify** user stories, functional requirements, acceptance tests
-2. **/plan** stack, architecture, constraints, performance and testing goals
-3. **/tasks** granular, test-first steps
-
-Log key spec and plan decisions to Chroma as `type:"decision"` with tags.
-
-## ✅ Quality Gates
-
-Every requirement is unambiguous, testable, and bounded.
-
-Prefer tests and unified diffs over prose.
-
-Mark uncertainty with `[VERIFY]` and propose checks.
-
-Include simple performance budgets where relevant. Example: search under 100ms at 10k rows.
-
-## 🔄 Session Lifecycle
-
-**Start**: Query Chroma for context relevant to the task. List any matches you will rely on.
-
-**Work**: Log decisions and gotchas as they happen. Keep each memory under 300 chars.
-
-**Checkpoint**: Every 30 minutes or at major milestone, summarize progress, open risks, and memories logged.
-
-**End**: Summarize changes, link artifacts in `./backups/`, and list all memories written.
-
-## 📝 Memory Checkpoint Rules
-
-**Every 5 interactions or after completing a task**, ask yourself:
-- Did I discover any new decisions, fixes, or patterns?
-- Did the user express any preferences?
-- Did I solve any tricky problems?
-- Did I learn something about the codebase architecture?
-
-If yes → Log a memory immediately before continuing.
-
-**During long coding sessions** (>10 interactions):
-- Pause and review: Have I logged recent learnings?
-- Check: Are there unrecorded decisions or fixes?
-- Remember: Each memory helps future sessions
-
-## 🧹 Session Hygiene
-
-Do not compact long chats.
-
-If context gets heavy, propose pruning to the last 20 turns and continue.
-
-For long outputs, write files to `./backups/` and return paths.
-
-## 🔍 Retrieval Checklist Before Coding
-
-1. Query Chroma for related memories
-2. Check repo files that match the task
-3. List open PRs or issues that touch the same area
-4. Only then propose changes
-
-## 🏷️ Memory Taxonomy
-
-- **type**: `decision`, `fix`, `tip`, `preference`
-- **tags**: short domain keywords. Example: `video,encode,preview`
-- **id rule**: stable handle per fact. Example: `encode-preview-policy`
-
-### Memory Examples
-```javascript
-documents: ["Use NVENC for H.264 previews; fallback x264 if GPU is busy"]
-metadatas: [{ "type":"tip","tags":"video,encode,preview","source":"PR#142" }]
-ids: ["encode-preview-policy"]
-
-documents: ["Adopt Conventional Commits and run tests on pre-push"]
-metadatas: [{ "type":"decision","tags":"repo,workflow,testing","source":"spec" }]
-ids: ["repo-commit-policy"]
-```
-
-## 📁 Output Policy
-
-For code, return unified diff or patchable file set.
-
-For scripts, include exact commands and paths.
-
-Save long outputs in `./backups/`. Use readable names. Echo paths in the reply.
-
-## 🛡️ Safety
-
-No secrets in `.chroma` or transcripts.
-
-Note licenses and third party terms when adding dependencies.
-
-Respect rate limits. Propose batching if needed.
-
-## 🎯 Modes
-
-**Small change**: Skip full spec. Still log key decisions. Still show diffs.
-
-**Feature**: Run the three phases. Enforce quality gates.
-
-## ⚡ Activation
-
-Read this file at session start.
-
-First action: Query existing memories to understand project context:
-```javascript
-mcp__chroma__chroma_query_documents {
-  "collection_name": "${PROJECT_COLLECTION}",
-  "query_texts": ["project decisions preferences fixes"],
-  "n_results": 5  // raise to 10 only if <3 strong hits
-}
-```
-
-Then review the memories and internalize:
-- Key architectural decisions made
-- User preferences to maintain
-- Known fixes and gotchas to avoid
-- Patterns established in the codebase
-
-Then load any always-on context files:
-- Read all Markdown files in `.chroma/context/` (titles + key bullets)
-- Cite which ones you used
-
-Run `bin/chroma-stats.py` if it exists and announce:
-**Contract loaded. Using Chroma ${PROJECT_COLLECTION}. Found [N] memories (by type ...).**
-
-If tools are missing, name them and stop before continuing.
-
----
-*Note: If you had existing CLAUDE.md instructions, they are preserved in `CLAUDE.md.original`*'
-
-    write_file_safe "CLAUDE.md" "$content"
-    print_status "Created CLAUDE.md with ChromaDB instructions"
-
-    if [[ -f "CLAUDE.md.original" ]] && [[ "$DRY_RUN" != "1" ]]; then
-        print_info "💡 Your original instructions are preserved in: CLAUDE.md.original"
-        print_info "   You can manually merge them if needed"
+Read `.chroma/context/*.md` at session start and list what you used.
+Run `bin/chroma-stats.py` and announce counts by type.
+TPL
+        fi
     fi
+
+    require_cmd envsubst "Install gettext:
+  macOS: brew install gettext && brew link --force gettext
+  Linux: apt-get install gettext"
+    if [[ "$DRY_RUN" == "1" ]]; then
+        print_info "[dry-run] Would render CLAUDE.md from templates/CLAUDE.md.tpl using PROJECT_COLLECTION=${PROJECT_COLLECTION}"
+    else
+        CONTENT="$(env PROJECT_COLLECTION="$PROJECT_COLLECTION" envsubst < templates/CLAUDE.md.tpl)"
+        write_file_safe "CLAUDE.md" "$CONTENT"
+    fi
+    print_status "Created CLAUDE.md from template"
 }
 
 create_gitignore() {
@@ -1368,8 +1174,9 @@ create_gitignore() {
 .chroma/
 *.chroma
 
-# MCP configuration (project-specific, track in version control)
-# .mcp.json - Comment out this line if you want to track MCP config
+# MCP configuration (tracked by default).
+# To ignore it, uncomment the next line:
+# .mcp.json
 
 # Memory exports (optional - track for history)
 claudedocs/*.md
@@ -1894,7 +1701,8 @@ main() {
                 ;;
             --print-collection)
                 # Just print the collection name and exit
-                PROJECT_NAME="${2:-$(basename "$PWD")}"
+                shift
+                PROJECT_NAME="${1:-$(basename "$PWD")}"
                 : "${CHROMA_COLLECTION_OVERRIDE:=}"
                 derive_collection_name() {
                     local base="${PROJECT_NAME:-$(basename "$PWD")}"

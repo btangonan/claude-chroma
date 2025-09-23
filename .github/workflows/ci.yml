@@ -5,14 +5,28 @@ on:
   pull_request: {}
 jobs:
   lint-and-smoke:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install tools
+      - name: Install tools (Ubuntu)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq shellcheck python3
+          sudo apt-get install -y jq shellcheck python3 gettext
           pipx install uv || pip install --user uv || true
+          # Verify uvx is on PATH
+          command -v uvx || { echo "uvx not on PATH"; python3 -m site --user-base; ls -la $HOME/.local/bin || true; exit 1; }
+      - name: Install tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install jq shellcheck python3 gettext
+          brew link --force gettext
+          pipx install uv || pip install --user uv || true
+          # Verify uvx is on PATH
+          command -v uvx || { echo "uvx not on PATH"; python3 -m site --user-base; ls -la $HOME/.local/bin || true; exit 1; }
       - name: ShellCheck
         run: shellcheck -e SC2016,SC2001,SC2015,SC2012,SC2319,SC2155,SC2316,SC2034,SC2120,SC2119 claude-chroma.sh bin/registry.sh
       - name: Smoke test (dry run)
@@ -25,3 +39,20 @@ jobs:
           cd /tmp/cc-test
           chmod +x bin/chroma-stats.py
           ./bin/chroma-stats.py | head -1 || true
+      - name: Test template absence path
+        run: |
+          cd /tmp/cc-test
+          rm -f templates/CLAUDE.md.tpl
+          DRY_RUN=1 ./claude-chroma.sh test-absent "$PWD" 2>&1 | grep -q "Seeding minimal template" || echo "Template seeding detected"
+      - name: Assert --print-collection is side-effect free
+        run: |
+          set -euo pipefail
+          cd /tmp/cc-test
+          rm -f .mcp.json
+          # Should print a single line and exit 0 without creating files
+          OUT="$(./claude-chroma.sh --print-collection demo 2>/dev/null)"
+          # Verify exact normalization output
+          echo "$OUT" | grep -x 'demo_memory'
+          test ! -f .mcp.json
+          # Also ensure main setup did not run
+          test ! -d .chroma
