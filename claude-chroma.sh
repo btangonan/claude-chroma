@@ -74,7 +74,7 @@ umask 077
 # ============================================================================
 # GLOBALS
 # ============================================================================
-readonly SCRIPT_VERSION="3.5.0"
+readonly SCRIPT_VERSION="3.5.1"
 readonly CHROMA_MCP_VERSION="chroma-mcp==0.2.0"
 
 # Environment flags
@@ -176,6 +176,35 @@ debug_log() {
 }
 
 # ============================================================================
+# PATH SAFETY FUNCTIONS
+# ============================================================================
+require_realpath() {
+    if command -v realpath >/dev/null 2>&1; then
+        realpath "$1"
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 - <<'PY' "$1"
+import os,sys; print(os.path.realpath(sys.argv[1]))
+PY
+    else
+        echo "$(cd "$(dirname "$1")" 2>/dev/null && pwd)/$(basename "$1")"
+    fi
+}
+
+assert_within() {
+    local child="$(require_realpath "$1")"
+    local parent="$(require_realpath "$2")"
+    case "$child" in
+        "$parent"/*|"$parent") ;;
+        *)
+            print_error "Path escapes project"
+            print_info "Child: $child"
+            print_info "Root: $parent"
+            exit 1
+            ;;
+    esac
+}
+
+# ============================================================================
 # INPUT VALIDATION & SANITIZATION
 # ============================================================================
 # Security Model:
@@ -252,8 +281,31 @@ backup_if_exists() {
         else
             cp -p "$file" "$backup_name" && \
                 debug_log "Backed up: $file → $backup_name"
+            # Prune old backups (keep last 5)
+            prune_backups "$file"
         fi
     fi
+}
+
+# Prune old backups keeping only the last N
+prune_backups() {
+    local file="$1"
+    local keep="${BACKUP_KEEP:-5}"
+
+    if [[ "$DRY_RUN" == "1" ]]; then
+        debug_log "[dry-run] Would prune backups for $file (keeping $keep)"
+        return
+    fi
+
+    # List backups sorted by time, remove oldest if > $keep
+    local count=0
+    ls -t "${file}.backup."* 2>/dev/null | while read -r backup; do
+        ((count++))
+        if [[ $count -gt $keep ]]; then
+            debug_log "Removing old backup: $backup"
+            rm -f "$backup"
+        fi
+    done
 }
 
 # Special backup for CLAUDE.md that preserves user content clearly
@@ -1003,13 +1055,16 @@ create_mcp_config() {
     print_info "Configuring MCP server..."
 
     local uvx_cmd="uvx"  # Use command name, not full path
-    local data_dir="$(pwd)/.chroma"
+    local data_dir="${DATA_DIR_OVERRIDE:-$(pwd)/.chroma}"
 
     # Validate the data directory path
     if ! validate_path "$data_dir"; then
         print_error "Invalid data directory path"
         exit 1
     fi
+
+    # Ensure data directory doesn't escape project
+    assert_within "$data_dir" "$(pwd)"
 
     if [[ -f ".mcp.json" ]]; then
         print_info "Existing .mcp.json found"
@@ -1038,6 +1093,7 @@ create_mcp_config() {
             merged_config=$(json_merge_mcp_config ".mcp.json" "$uvx_cmd" "$data_dir")
 
             write_file_safe ".mcp.json" "$merged_config"
+            chmod 600 .mcp.json 2>/dev/null || true
             SKIP_MCP=true
         fi
     else
@@ -1049,6 +1105,7 @@ create_mcp_config() {
         mcp_config=$(json_emit_mcp_config "$uvx_cmd" "$data_dir")
 
         write_file_safe ".mcp.json" "$mcp_config"
+        chmod 600 .mcp.json 2>/dev/null || true
     fi
 
     # Validate the final config
@@ -1411,7 +1468,7 @@ mcp__chroma__chroma_add_documents {
 - Try recreating collection with command above
 
 ### Memory not persisting
-- Check collection name matches: "project_memory"
+- Check collection name matches: "${PROJECT_COLLECTION}"
 - Verify metadata format is correct
 - Ensure unique IDs for each memory'
 
@@ -1773,15 +1830,17 @@ print_summary() {
 # PROJECT REGISTRY
 # ============================================================================
 add_to_registry() {
-    local registry="$HOME/.claude/chroma_projects.yml"
+    # Use XDG config home if available
+    local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+    local registry="$config_dir/claude/chroma_projects.jsonl"
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
     # Create registry directory if needed
     mkdir -p "$(dirname "$registry")"
 
-    # Add entry if not already present
-    if ! grep -Fq "path: $PROJECT_DIR" "$registry" 2>/dev/null; then
-        printf -- "- name: %s\n  path: %s\n  collection: %s\n  data_dir: %s/.chroma\n  created_at: %s\n  sessions: 0\n  last_used: null\n\n" \
+    # Add entry if not already present (JSONL format)
+    if ! grep -Fq "\"path\":\"$PROJECT_DIR\"" "$registry" 2>/dev/null; then
+        printf '{"name":"%s","path":"%s","collection":"%s","data_dir":"%s/.chroma","created_at":"%s","sessions":0}\n' \
             "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" "$PROJECT_DIR" "$timestamp" >> "$registry"
     fi
 }
@@ -1810,6 +1869,32 @@ main() {
                 echo "claude-chroma.sh version $SCRIPT_VERSION"
                 exit 0
                 ;;
+            --collection)
+                shift
+                CHROMA_COLLECTION_OVERRIDE="${1:-}"
+                ;;
+            --data-dir)
+                shift
+                DATA_DIR_OVERRIDE="${1:-}"
+                ;;
+            --print-collection)
+                # Just print the collection name and exit
+                PROJECT_NAME="${2:-$(basename "$PWD")}"
+                : "${CHROMA_COLLECTION_OVERRIDE:=}"
+                derive_collection_name() {
+                    local base="${PROJECT_NAME:-$(basename "$PWD")}"
+                    if command -v iconv >/dev/null 2>&1; then
+                        base="$(printf '%s' "$base" | iconv -f utf-8 -t ascii//TRANSLIT 2>/dev/null || printf '%s' "$base")"
+                    fi
+                    local norm
+                    norm="$(printf '%s' "$base" | tr '[:upper:] .-/' '[:lower:]___' | sed 's/[^a-z0-9_]/_/g')"
+                    norm="${norm:0:48}"
+                    printf '%s_memory' "$norm"
+                }
+                PROJECT_COLLECTION="${CHROMA_COLLECTION_OVERRIDE:-$(derive_collection_name)}"
+                echo "$PROJECT_COLLECTION"
+                exit 0
+                ;;
             --help)
                 echo "Usage: $0 [PROJECT_NAME] [PROJECT_PATH] [OPTIONS]"
                 echo ""
@@ -1818,6 +1903,9 @@ main() {
                 echo "  --non-interactive  Run without prompts"
                 echo "  --yes, -y          Assume yes to all prompts"
                 echo "  --debug            Show debug output"
+                echo "  --collection NAME  Override collection name"
+                echo "  --data-dir PATH    Override data directory"
+                echo "  --print-collection Print collection name and exit"
                 echo "  --version          Show version"
                 echo "  --help             Show this help"
                 echo ""
@@ -1866,8 +1954,13 @@ main() {
     setup_project_directory "$project_name" "$project_path"
 
     # Derive a per-project collection name
+    : "${CHROMA_COLLECTION_OVERRIDE:=}"
     derive_collection_name() {
         local base="${PROJECT_NAME:-$(basename "$PWD")}"
+        # Transliterate non-ASCII characters if iconv is available
+        if command -v iconv >/dev/null 2>&1; then
+            base="$(printf '%s' "$base" | iconv -f utf-8 -t ascii//TRANSLIT 2>/dev/null || printf '%s' "$base")"
+        fi
         # normalize: lower, replace non [a-z0-9_] with _
         local norm
         norm="$(printf '%s' "$base" | tr '[:upper:] .-/' '[:lower:]___' | sed 's/[^a-z0-9_]/_/g')"
@@ -1875,7 +1968,7 @@ main() {
         norm="${norm:0:48}"
         printf '%s_memory' "$norm"
     }
-    PROJECT_COLLECTION="$(derive_collection_name)"
+    PROJECT_COLLECTION="${CHROMA_COLLECTION_OVERRIDE:-$(derive_collection_name)}"
 
     migrate_from_v3
     check_broken_shell_function

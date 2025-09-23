@@ -1,13 +1,25 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uvx chromadb-cli@latest
 """
 Chroma statistics helper for ChromaDB projects.
 Reports memory count and breakdown by type.
+Zero-dependency execution via uvx.
 """
 import os
 import sys
 import json
-import chromadb
-from chromadb.config import Settings
+
+try:
+    import chromadb
+    from chromadb.config import Settings
+except ImportError:
+    print(json.dumps({
+        "collection": os.environ.get("CHROMA_COLLECTION", "project_memory"),
+        "total": 0,
+        "by_type": {},
+        "status": "error",
+        "error": "ChromaDB not available. Install with: pip install chromadb"
+    }))
+    sys.exit(1)
 
 def main():
     # Get configuration from environment or defaults
