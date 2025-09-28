@@ -9,7 +9,7 @@
         "--client-type",
         "persistent",
         "--data-dir",
-        "/Users/bradleytangonan/Desktop/my apps/chromadb/.chroma"
+        ".chroma"
       ],
       "env": {
         "ANONYMIZED_TELEMETRY": "FALSE",

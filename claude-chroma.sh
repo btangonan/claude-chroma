@@ -1056,7 +1056,7 @@ create_mcp_config() {
     print_info "Configuring MCP server..."
 
     local uvx_cmd="uvx"  # Use command name, not full path
-    local data_dir="${DATA_DIR_OVERRIDE:-$(pwd)/.chroma}"
+    local data_dir="${DATA_DIR_OVERRIDE:-.chroma}"  # Use relative path for portability
 
     # Validate the data directory path
     if ! validate_path "$data_dir"; then
