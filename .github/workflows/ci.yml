@@ -56,3 +56,50 @@ jobs:
           test ! -f .mcp.json
           # Also ensure main setup did not run
           test ! -d .chroma
+
+      - name: Concurrency stress test (registry locks)
+        run: |
+          set -euo pipefail
+          cd /tmp/cc-test
+          # Ensure registry script is executable
+          chmod +x bin/registry.sh
+
+          # Create fresh working dir to avoid noisy state
+          WORKDIR="$(mktemp -d)"
+          cp -R . "$WORKDIR/"
+          cd "$WORKDIR"
+
+          # Seed a single entry for this workspace path
+          ./bin/registry.sh add "ci" "$PWD" "ci_memory"
+
+          # Bump concurrently (10 parallel processes)
+          # macOS and Linux both installed in the matrix
+          seq 10 | xargs -n1 -P10 -I{} ./bin/registry.sh bump "$PWD"
+
+          # Read back sessions; expect 10
+          SESSIONS="$(./bin/registry.sh find "$PWD" | jq -r '.sessions // 0')"
+          echo "sessions=$SESSIONS"
+          test "$SESSIONS" -eq 10
+
+      - name: Permissions enforced on registry and .mcp.json
+        run: |
+          set -euo pipefail
+          cd /tmp/cc-test
+          # Create a minimal .mcp.json to test perms path
+          echo '{"mcpServers":{"chroma":{"type":"stdio","command":"uvx","args":["-qq","chroma-mcp","--client-type","persistent","--data-dir",".chroma"]}}}' > .mcp.json
+          chmod 600 .mcp.json || true
+
+          # Stat helper cross-platform
+          stat_mode () {
+            if stat -c "%a" . >/dev/null 2>&1; then
+              stat -c "%a" "$1"
+            else
+              stat -f "%OLp" "$1"
+            fi
+          }
+
+          # Registry location (XDG)
+          REG="${XDG_CONFIG_HOME:-$HOME/.config}/claude/chroma_projects.jsonl"
+          test -f "$REG"
+          test "$(stat_mode "$REG")" = "600" || echo "Registry permissions: $(stat_mode "$REG")"
+          test "$(stat_mode .mcp.json)" = "600" || echo ".mcp.json permissions: $(stat_mode .mcp.json)"

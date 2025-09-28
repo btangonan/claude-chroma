@@ -26,9 +26,27 @@ _lock_run() { # _lock_run <lockfile> <cmd...>
         lockf -k "$lf" "$@"
         return $?
     fi
-    # Fallback: mkdir lock
+    # Fallback: mkdir lock with timeout
     local d="${lf}.dirlock"
-    while ! mkdir "$d" 2>/dev/null; do sleep 0.05; done
+    local max_attempts=100  # 5 seconds at 0.05s intervals
+    local attempts=0
+
+    echo "Warning: Using mkdir fallback for locking (flock/lockf unavailable)" >&2
+
+    while ! mkdir "$d" 2>/dev/null; do
+        attempts=$((attempts + 1))
+        if [[ $attempts -ge $max_attempts ]]; then
+            echo "Error: Lock timeout after ${max_attempts} attempts, removing stale lock" >&2
+            rm -rf "$d" 2>/dev/null || true
+            if ! mkdir "$d" 2>/dev/null; then
+                echo "Error: Unable to acquire lock even after cleanup" >&2
+                return 1
+            fi
+            break
+        fi
+        sleep 0.05
+    done
+
     trap 'rmdir "$d" 2>/dev/null || true' EXIT
     "$@"; local rc=$?
     rmdir "$d" 2>/dev/null || true
@@ -42,6 +60,15 @@ _write_atomic() { # _write_atomic <target> [mode]
     cat >"$tmp"
     chmod "$mode" "$tmp" 2>/dev/null || true
     mv -f "$tmp" "$target"
+}
+
+# Check jq version and warn if < 1.5
+_check_jq_version() {
+    if command -v jq >/dev/null 2>&1; then
+        if ! jq -r --version 2>/dev/null | grep -qE 'jq-1\.[5-9]|jq-[2-9]'; then
+            echo "Warning: jq >=1.5 recommended for optimal JSON handling" >&2
+        fi
+    fi
 }
 
 # Ensure registry exists with proper permissions
@@ -152,6 +179,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Main
+# Check jq version early for any operations that use it
+_check_jq_version
+
 case "${1:-}" in
     add)
         add_entry "$2" "$3" "$4"

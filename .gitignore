@@ -13,3 +13,11 @@ Thumbs.db
 .chroma/
 temp/
 backup/
+*.chroma
+
+# Generated configuration (contains machine-specific paths)
+.mcp.json
+.mcp.json.backup.*
+
+# Claude Code artifacts
+.claude/

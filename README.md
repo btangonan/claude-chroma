@@ -6,7 +6,19 @@ A streamlined setup script for ChromaDB Model Context Protocol (MCP) server inte
 
 Claude-Chroma enables **persistent memory** for Claude Desktop projects. Instead of starting fresh every session, Claude can remember your project decisions, fixes, and preferences across conversations. This creates continuity that dramatically improves development workflows by maintaining context about your codebase, architecture choices, and project history.
 
+📖 **New to Claude-Chroma?** Check out our [Quick Start Guide](QUICKSTART.md) for the fastest setup!
+
 ## Quick Start
+
+### 🚀 One-Click Installation (Easiest!)
+
+**macOS Users:** Simply double-click the installer:
+1. Download `setup-claude-chroma-oneclick-fixed.command`
+2. Double-click to run
+3. Enter your project name when prompted
+4. Done! Use the created `launch-claude-here.command` to start Claude with memory
+
+### Command Line Installation
 
 Run the setup script from any directory:
 
@@ -47,6 +59,8 @@ CHROMA_SETUP_ADD_SHELL_FN=1 ./claude-chroma.sh
 - Claude Desktop app
 
 **Note**: The script will check for `uvx` and guide you through installation if needed. Python is auto-downloaded by uvx when required.
+
+**Network Filesystems**: If your project is on NFS, SMB, or similar network storage, file locking behavior may vary. The registry uses cross-platform locks for safety but network filesystems may introduce occasional delays in lock acquisition.
 
 ## Usage After Setup
 
