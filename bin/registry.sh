@@ -6,7 +6,43 @@ set -euo pipefail
 # Use XDG config home if available
 readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 readonly REGISTRY="${REGISTRY:-$CONFIG_DIR/claude/chroma_projects.jsonl}"
-readonly LOCK_FD=200
+
+# Strict perms on anything we touch
+umask 077
+
+# Cross-platform lock runner:
+# - Linux: flock
+# - macOS: lockf
+# - Fallback: mkdir-based spinlock (last resort; cleans up)
+_lock_run() { # _lock_run <lockfile> <cmd...>
+    local lf="$1"; shift
+    # Prefer flock if present
+    if command -v flock >/dev/null 2>&1; then
+        ( exec 9>>"$lf"; flock 9; "$@" )
+        return $?
+    fi
+    # macOS: lockf is native
+    if command -v lockf >/dev/null 2>&1; then
+        lockf -k "$lf" "$@"
+        return $?
+    fi
+    # Fallback: mkdir lock
+    local d="${lf}.dirlock"
+    while ! mkdir "$d" 2>/dev/null; do sleep 0.05; done
+    trap 'rmdir "$d" 2>/dev/null || true' EXIT
+    "$@"; local rc=$?
+    rmdir "$d" 2>/dev/null || true
+    trap - EXIT
+    return $rc
+}
+
+# Atomic write helper
+_write_atomic() { # _write_atomic <target> [mode]
+    local target="$1" mode="${2:-600}" tmp="${target}.tmp.$$"
+    cat >"$tmp"
+    chmod "$mode" "$tmp" 2>/dev/null || true
+    mv -f "$tmp" "$target"
+}
 
 # Ensure registry exists with proper permissions
 init_registry() {
@@ -16,42 +52,7 @@ init_registry() {
     chmod 600 "$REGISTRY" 2>/dev/null || true
 }
 
-# Acquire lock for atomic operations
-acquire_lock() {
-    # Try flock first (Linux)
-    if command -v flock >/dev/null 2>&1; then
-        eval "exec $LOCK_FD>\"$REGISTRY.lock\""
-        flock -x "$LOCK_FD"
-    else
-        # macOS fallback using mkdir (atomic operation)
-        local lock_dir="$REGISTRY.lockdir"
-        local max_wait=10
-        local waited=0
-
-        while ! mkdir "$lock_dir" 2>/dev/null; do
-            if [[ $waited -ge $max_wait ]]; then
-                # Force release stale lock
-                rm -rf "$lock_dir" 2>/dev/null || true
-                mkdir "$lock_dir" 2>/dev/null || true
-                break
-            fi
-            sleep 0.1
-            waited=$((waited + 1))
-        done
-    fi
-}
-
-# Release lock
-release_lock() {
-    if command -v flock >/dev/null 2>&1; then
-        flock -u "$LOCK_FD" 2>/dev/null || true
-        eval "exec $LOCK_FD>&-" 2>/dev/null || true
-    else
-        rm -rf "$REGISTRY.lockdir" 2>/dev/null || true
-    fi
-}
-
-# Add entry with atomic append
+# Add entry
 add_entry() {
     local name="${1:-}"
     local path="${2:-}"
@@ -65,19 +66,14 @@ add_entry() {
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
     init_registry
-    acquire_lock
 
-    # Create JSON with jq for proper escaping (compact format for JSONL)
-    local entry=$(jq -nc \
-        --arg name "$name" \
-        --arg path "$path" \
-        --arg collection "$collection" \
-        --arg ts "$timestamp" \
-        '{name: $name, path: $path, collection: $collection, created: $ts, sessions: 1, last_used: null}')
-
-    echo "$entry" >> "$REGISTRY"
-
-    release_lock
+    # Ensure sessions and last_used fields exist for later bumps
+    _lock_run "$REGISTRY.lock" bash -c '
+        line=$0; reg=$1
+        printf "%s\n" "$line" >> "$reg"
+        chmod 600 "$reg" 2>/dev/null || true
+    ' "$(printf '{"name":"%s","path":"%s","collection":"%s","created":"%s","sessions":0,"last_used":null}' \
+         "$name" "$path" "$collection" "$timestamp")" "$REGISTRY"
 }
 
 # List all entries as JSON array
@@ -85,7 +81,17 @@ list_entries() {
     [[ -f "$REGISTRY" ]] || { echo "[]"; return; }
 
     # Use jq to collect JSONL into array
-    jq -s '.' "$REGISTRY" 2>/dev/null || echo "[]"
+    if command -v jq >/dev/null 2>&1; then
+        jq -s '.' "$REGISTRY" 2>/dev/null || echo "[]"
+    else
+        echo "["
+        local first=true
+        while IFS= read -r line; do
+            [[ "$first" == true ]] && first=false || echo ","
+            printf "  %s" "$line"
+        done < "$REGISTRY"
+        echo -e "\n]"
+    fi
 }
 
 # Find by path
@@ -94,12 +100,16 @@ find_by_path() {
     [[ -f "$REGISTRY" ]] || return 1
     [[ -z "$search_path" ]] && return 1
 
-    # Use jq to find matching entries
-    jq -r --arg path "$search_path" \
-        'select(.path == $path)' "$REGISTRY" 2>/dev/null | tail -1
+    if command -v jq >/dev/null 2>&1; then
+        # Use jq to find matching entries
+        jq -r --arg path "$search_path" \
+            'select(.path == $path)' "$REGISTRY" 2>/dev/null | tail -1
+    else
+        grep -F "\"path\":\"$search_path\"" "$REGISTRY" | tail -1
+    fi
 }
 
-# Update entry with atomic rewrite using jq
+# Update entry to bump sessions and last_used (jq-based; safe defaults)
 update_entry() {
     local path="${1:-}"
     [[ -z "$path" ]] && {
@@ -109,70 +119,34 @@ update_entry() {
 
     [[ -f "$REGISTRY" ]] || return 0
 
-    local timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    local tmp="${REGISTRY}.tmp.$$"
+    local timestamp
+    timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-    acquire_lock
-
-    # Use jq to update the matching entry
-    if command -v jq >/dev/null 2>&1; then
-        # Safe JSON manipulation with jq
-        jq -c --arg path "$path" --arg ts "$timestamp" '
-            if .path == $path then
-                .sessions = ((.sessions // 0) + 1) |
-                .last_used = $ts
-            else
-                .
-            end
-        ' "$REGISTRY" > "$tmp" 2>/dev/null
-
-        # Atomic move with proper permissions
-        if [[ -s "$tmp" ]]; then
-            chmod 600 "$tmp"
-            mv -f "$tmp" "$REGISTRY"
-        else
-            rm -f "$tmp"
-        fi
-    else
-        # Fallback: safer sed approach with validation
-        echo "Warning: jq not found, using fallback method" >&2
-
-        while IFS= read -r line; do
-            if [[ "$line" == *"\"path\":\"$path\""* ]]; then
-                # Validate JSON structure before manipulation
-                if echo "$line" | grep -qE '^\{.*\}$'; then
-                    # Extract current sessions count safely
-                    local current_sessions=$(echo "$line" | grep -oE '"sessions":[0-9]+' | grep -oE '[0-9]+' || echo "0")
-                    local new_sessions=$((current_sessions + 1))
-
-                    # Update with careful escaping
-                    echo "$line" | sed \
-                        -e "s/\"sessions\":[0-9]*/\"sessions\":$new_sessions/" \
-                        -e "s/\"last_used\":null/\"last_used\":\"$timestamp\"/" \
-                        -e "s/\"last_used\":\"[^\"]*\"/\"last_used\":\"$timestamp\"/"
-                else
-                    echo "$line"
-                fi
-            else
-                echo "$line"
-            fi
-        done < "$REGISTRY" > "$tmp"
-
-        if [[ -s "$tmp" ]]; then
-            chmod 600 "$tmp"
-            mv -f "$tmp" "$REGISTRY"
-        else
-            rm -f "$tmp"
-        fi
+    if ! command -v jq >/dev/null 2>&1; then
+        # No jq: fail soft without corrupting the registry
+        echo "jq not found; skipping registry bump safely" >&2
+        return 0
     fi
 
-    release_lock
+    _lock_run "$REGISTRY.lock" bash -c '
+        reg="$1"; path="$2"; ts="$3"; tmp="${reg}.tmp.$$"
+        {
+            while IFS= read -r line; do
+                if printf %s "$line" | grep -F "\"path\":\"$path\"" >/dev/null; then
+                    printf %s "$line" | jq -c --arg ts "$ts" \
+                        ".sessions = ((.sessions // 0) + 1) | .last_used = \$ts"
+                else
+                    printf "%s\n" "$line"
+                fi
+            done <"$reg"
+        } >"$tmp" && mv -f "$tmp" "$reg"
+    ' _ "$REGISTRY" "$path" "$timestamp"
 }
 
 # Clean up on exit
 cleanup() {
-    release_lock
     rm -f "$REGISTRY".tmp.* 2>/dev/null || true
+    rm -f "$REGISTRY.lock" 2>/dev/null || true
 }
 
 trap cleanup EXIT INT TERM

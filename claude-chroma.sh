@@ -1056,17 +1056,26 @@ create_mcp_config() {
     print_info "Configuring MCP server..."
 
     local uvx_cmd="uvx"  # Use command name, not full path
-    local data_dir="${DATA_DIR_OVERRIDE:-.chroma}"  # Use relative path for portability
+    local data_dir_rel="${DATA_DIR_OVERRIDE:-.chroma}"
+    local project_dir_abs
+    project_dir_abs="$(pwd)"
 
-    # Validate the data directory path
-    if ! validate_path "$data_dir"; then
+    # Validate the (relative) data directory path token
+    if ! validate_path "$data_dir_rel"; then
         print_error "Invalid data directory path"
         exit 1
     fi
 
-    # Ensure data directory doesn't escape project (skip in dry-run since dir doesn't exist)
+    # Resolve to an absolute path within the project root
+    # We prefer an absolute path in .mcp.json to avoid CWD fragility.
+    local data_dir_abs="$project_dir_abs/$data_dir_rel"
+    if command -v realpath >/dev/null 2>&1; then
+        data_dir_abs="$(realpath -m "$data_dir_abs")"
+    fi
+
+    # Ensure the resolved absolute dir is still inside the project
     if [[ "$DRY_RUN" != "1" ]]; then
-        assert_within "$data_dir" "$(pwd)"
+        assert_within "$data_dir_abs" "$project_dir_abs"
     fi
 
     if [[ -f ".mcp.json" ]]; then
@@ -1093,7 +1102,7 @@ create_mcp_config() {
             backup_if_exists ".mcp.json"
 
             local merged_config
-            merged_config=$(json_merge_mcp_config ".mcp.json" "$uvx_cmd" "$data_dir")
+            merged_config=$(json_merge_mcp_config ".mcp.json" "$uvx_cmd" "$data_dir_abs")
 
             write_file_safe ".mcp.json" "$merged_config"
             chmod 600 .mcp.json 2>/dev/null || true
@@ -1105,7 +1114,7 @@ create_mcp_config() {
 
     if [[ "$SKIP_MCP" != "true" ]]; then
         local mcp_config
-        mcp_config=$(json_emit_mcp_config "$uvx_cmd" "$data_dir")
+        mcp_config=$(json_emit_mcp_config "$uvx_cmd" "$data_dir_abs")
 
         write_file_safe ".mcp.json" "$mcp_config"
         chmod 600 .mcp.json 2>/dev/null || true
