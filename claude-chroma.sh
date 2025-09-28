@@ -920,36 +920,27 @@ check_prerequisites() {
         print_warning "Python3 not found (used for fallback operations)"
     fi
 
-    # Check for uvx
+    # Check for uvx (soft requirement during setup).
+    # We only need uvx at runtime; config generation should still proceed.
     if ! command -v uvx >/dev/null 2>&1; then
-        print_error "uvx is not installed"
-        print_info "ChromaDB MCP server requires uvx"
-        print_info ""
-        print_info "Install options:"
-        print_info "  1. pip install --user uv"
-        print_info "  2. pipx install uv"
-        print_info "  3. brew install uv (macOS/Linux)"
-        print_info "  4. https://github.com/astral-sh/uv"
-
-        if prompt_yes "Try installing with pip?"; then
-            print_info "Installing uv with pip..."
-            if pip install --user uv || pip3 install --user uv; then
-                ensure_path_line
-                export PATH="$HOME/.local/bin:$PATH"
-
-                if command -v uvx >/dev/null 2>&1; then
-                    print_status "uvx installed successfully"
+        print_warning "uvx not found. We'll still generate .mcp.json; the server will install or run on first use."
+        # In non-interactive/isolated envs, do not attempt network installs.
+        if [[ "$NON_INTERACTIVE" != "1" ]]; then
+            if prompt_yes "Attempt to install uv with pip/pipx now?"; then
+                print_info "Installing uv (best-effort)..."
+                if command -v pipx >/dev/null 2>&1 && pipx install uv >/dev/null 2>&1; then
+                    export PATH="$HOME/.local/bin:$PATH"
+                    print_status "uvx installed via pipx"
+                elif command -v pip3 >/dev/null 2>&1 && pip3 install --user uv >/dev/null 2>&1; then
+                    export PATH="$HOME/.local/bin:$PATH"
+                    print_status "uvx installed via pip3"
+                elif command -v pip >/dev/null 2>&1 && pip install --user uv >/dev/null 2>&1; then
+                    export PATH="$HOME/.local/bin:$PATH"
+                    print_status "uvx installed via pip"
                 else
-                    print_error "uvx installed but not in PATH"
-                    print_info "Restart terminal or run: export PATH=\"\$HOME/.local/bin:\$PATH\""
-                    has_issues=true
+                    print_warning "uv installation attempt failed; continuing without it"
                 fi
-            else
-                print_error "Failed to install uv"
-                has_issues=true
             fi
-        else
-            has_issues=true
         fi
     else
         print_status "uvx found at: $(command -v uvx)"
@@ -974,7 +965,7 @@ check_prerequisites() {
     fi
 
     if [[ "$has_issues" == "true" ]]; then
-        print_error "Missing required dependencies"
+        print_error "Missing required dependencies (jq is mandatory)."
         exit 1
     fi
 }
@@ -1070,7 +1061,8 @@ create_mcp_config() {
     # We prefer an absolute path in .mcp.json to avoid CWD fragility.
     local data_dir_abs="$project_dir_abs/$data_dir_rel"
     if command -v realpath >/dev/null 2>&1; then
-        data_dir_abs="$(realpath -m "$data_dir_abs")"
+        # macOS realpath doesn't support -m, just normalize the path
+        data_dir_abs="$(cd "$(dirname "$data_dir_abs")" 2>/dev/null && pwd)/$(basename "$data_dir_abs")" || data_dir_abs="$data_dir_abs"
     fi
 
     # Ensure the resolved absolute dir is still inside the project
@@ -1155,13 +1147,16 @@ TPL
         fi
     fi
 
-    require_cmd envsubst "Install gettext:
-  macOS: brew install gettext && brew link --force gettext
-  Linux: apt-get install gettext"
+    # Prefer envsubst if present; otherwise fall back to a minimal awk renderer
     if [[ "$DRY_RUN" == "1" ]]; then
         print_info "[dry-run] Would render CLAUDE.md from templates/CLAUDE.md.tpl using PROJECT_COLLECTION=${PROJECT_COLLECTION}"
     else
-        CONTENT="$(env PROJECT_COLLECTION="$PROJECT_COLLECTION" envsubst < templates/CLAUDE.md.tpl)"
+        if command -v envsubst >/dev/null 2>&1; then
+            CONTENT="$(PROJECT_COLLECTION="$PROJECT_COLLECTION" envsubst < templates/CLAUDE.md.tpl)"
+        else
+            # Minimal variable expansion for ${PROJECT_COLLECTION}
+            CONTENT="$(awk -v v="$PROJECT_COLLECTION" '{gsub(/\${PROJECT_COLLECTION}/, v)}1' templates/CLAUDE.md.tpl)"
+        fi
         write_file_safe "CLAUDE.md" "$CONTENT"
     fi
     print_status "Created CLAUDE.md from template"
