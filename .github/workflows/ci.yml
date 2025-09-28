@@ -98,6 +98,43 @@ jobs:
             fi
           }
 
+      - name: MCP config succeeds with uvx
+        run: |
+          set -euo pipefail
+          cd /tmp/cc-uvx-test
+          mkdir -p /tmp/cc-uvx-test
+          cp /tmp/cc-test/claude-chroma.sh .
+          cp -r /tmp/cc-test/bin .
+
+          # Ensure uvx is available (installed by setup)
+          pip install --user uv || true
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # Run setup with uvx available
+          NON_INTERACTIVE=1 ASSUME_YES=1 ./claude-chroma.sh
+
+          # Verify .mcp.json was created
+          test -f .mcp.json
+          jq -e .mcpServers.chroma .mcp.json
+
+      - name: MCP config fails without uvx (honest failure)
+        run: |
+          set -e
+          cd /tmp/cc-no-uvx
+          mkdir -p /tmp/cc-no-uvx
+          cp /tmp/cc-test/claude-chroma.sh .
+          cp -r /tmp/cc-test/bin .
+
+          # Simulate no uvx in PATH
+          PATH="/usr/bin:/bin" NON_INTERACTIVE=1 ASSUME_YES=1 \
+            bash claude-chroma.sh 2>&1 | tee output.log || true
+
+          # Check that it failed with proper error message
+          grep -q "uvx is required but not installed" output.log
+
+          # Verify .mcp.json was NOT created
+          test ! -f .mcp.json
+
           # Registry location (XDG)
           REG="${XDG_CONFIG_HOME:-$HOME/.config}/claude/chroma_projects.jsonl"
           test -f "$REG"

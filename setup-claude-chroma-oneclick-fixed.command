@@ -4,6 +4,17 @@
 # Version: 3.5.4-oneclick-selfcontained
 
 set -euo pipefail
+shopt -s lastpipe 2>/dev/null || true   # helps PIPESTATUS on some bash builds
+umask 077
+
+# -----------------------------------------------------------------------------
+# Minimal, isolation-safe environment defaults
+# -----------------------------------------------------------------------------
+: "${TERM:=xterm}"
+: "${PATH:=/usr/bin:/bin}"
+: "${PWD:=$(command -v pwd >/dev/null 2>&1 && pwd || /bin/pwd)}"
+# In env -i HOME may be missing; default to current working dir for safety
+: "${HOME:=$PWD}"
 
 # --- Self-contained bootstrap (jq + python3-free) -----------------------------
 
@@ -26,14 +37,18 @@ bootstrap_add_path_line() {
 
 bootstrap_mkdirp() { mkdir -p "$1" 2>/dev/null || true; }
 
-# Logging setup
-LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-chroma"
+# -----------------------------------------------------------------------------
+# Logging: create dirs BEFORE any logging attempts
+# -----------------------------------------------------------------------------
+XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+LOG_DIR="$XDG_STATE_HOME/claude-chroma"
 LOG_FILE="$LOG_DIR/install.log"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+chmod 700 "$LOG_DIR" 2>/dev/null || true
+touch "$LOG_FILE" 2>/dev/null || true
+chmod 600 "$LOG_FILE" 2>/dev/null || true
 
 bootstrap_log_init() {
-  bootstrap_mkdirp "$LOG_DIR"
-  touch "$LOG_FILE" 2>/dev/null || true
-  chmod 600 "$LOG_FILE" 2>/dev/null || true
   echo "=== $(date): Claude-Chroma Installation Started ===" >> "$LOG_FILE" 2>/dev/null || true
 }
 
@@ -139,6 +154,43 @@ ensure_jq() {
   jq() { cat; }  # shell function visible within this script
 }
 
+ensure_uvx() {
+  if command -v uvx >/dev/null 2>&1; then
+    return 0
+  fi
+
+  bootstrap_log "uvx not found. Bootstrapping a local copy from embedded assets..."
+  bootstrap_mkdirp "$BOOTSTRAP_BIN_DIR"
+  bootstrap_add_path_line
+
+  local UVX="$BOOTSTRAP_BIN_DIR/uvx"
+  local ARCH="$(uname -m)"
+  local OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+
+  # Determine the correct uvx binary based on OS/arch
+  local UVX_VARIANT=""
+  case "$OS/$ARCH" in
+    darwin/arm64)  UVX_VARIANT="uv/macos/arm64/uvx" ;;
+    darwin/x86_64) UVX_VARIANT="uv/macos/x86_64/uvx" ;;
+    *)
+      bootstrap_warn "Unsupported platform for embedded uvx: $OS/$ARCH"
+      return 1
+      ;;
+  esac
+
+  # Try embedded payload
+  if bootstrap_extract_embedded "$UVX_VARIANT" "$UVX"; then
+    chmod +x "$UVX" 2>/dev/null || true
+    if "$UVX" --version >/dev/null 2>&1; then
+      bootstrap_log "Using embedded uvx at $UVX"
+      return 0
+    fi
+  fi
+
+  bootstrap_warn "Failed to extract or run embedded uvx"
+  return 1
+}
+
 # Python fallback. If python3 is missing, shim it using uvx (or fail loudly).
 ensure_python3() {
   if command -v python3 >/dev/null 2>&1; then
@@ -180,6 +232,7 @@ bootstrap_prepare() {
   bootstrap_mkdirp "$BOOTSTRAP_BIN_DIR"
   bootstrap_add_path_line
   ensure_jq
+  ensure_uvx  # Extract embedded uvx if not already available
   ensure_python3
 
   # envsubst shim if missing
@@ -225,6 +278,32 @@ case "${1:-}" in
       exit 1
     fi
 
+    # Test uvx extraction
+    local ARCH="$(uname -m)"
+    local OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    local UVX_VARIANT=""
+    case "$OS/$ARCH" in
+      darwin/arm64)  UVX_VARIANT="uv/macos/arm64/uvx" ;;
+      darwin/x86_64) UVX_VARIANT="uv/macos/x86_64/uvx" ;;
+      *)             UVX_VARIANT="" ;;
+    esac
+
+    if [ -n "$UVX_VARIANT" ]; then
+      if bootstrap_extract_embedded "$UVX_VARIANT" "$TEST_DIR/test-uvx" 2>/dev/null; then
+        chmod +x "$TEST_DIR/test-uvx"
+        if "$TEST_DIR/test-uvx" --version >/dev/null 2>&1; then
+          echo "✅ Embedded uvx functional"
+        else
+          echo "❌ Embedded uvx non-functional"
+          rm -rf "$TEST_DIR"
+          exit 1
+        fi
+      else
+        echo "❌ Failed to extract embedded uvx"
+        exit 1
+      fi
+    fi
+
     rm -rf "$TEST_DIR"
     echo "✅ Offline self-test passed"
     exit 0
@@ -251,10 +330,22 @@ fi
 bootstrap_prepare
 # --- End bootstrap ------------------------------------------------------------
 
-# Get the directory where this script is located (where user double-clicked)
+# -----------------------------------------------------------------------------
+# Resolve script dir and allow env to override project metadata
+# -----------------------------------------------------------------------------
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_DIR="$SCRIPT_DIR"
-PROJECT_NAME="$(basename "$PROJECT_DIR")"
+# Respect externally-provided PROJECT_DIR / PROJECT_NAME; fall back to script dir
+PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
+PROJECT_NAME="${PROJECT_NAME:-$(basename "$PROJECT_DIR")}"
+# Normalize PROJECT_DIR to an absolute path if possible
+if cd "$PROJECT_DIR" 2>/dev/null; then
+  PROJECT_DIR="$(pwd)"
+  cd - >/dev/null 2>&1
+else
+  # If the directory doesn't exist yet, normalize its parent
+  PARENT="$(cd "$(dirname "$PROJECT_DIR")" 2>/dev/null && pwd || printf '%s' "$(dirname "$PROJECT_DIR")")"
+  PROJECT_DIR="$PARENT/$(basename "$PROJECT_DIR")"
+fi
 
 # Colors for output
 readonly GREEN='\033[0;32m'
@@ -299,14 +390,26 @@ echo ""
 
 # Run the setup script in non-interactive mode
 echo -e "${BLUE}🔧 Configuring ChromaDB for your project...${NC}"
+
+# Always execute from the intended project directory so .mcp.json lands there
+mkdir -p "$PROJECT_DIR" 2>/dev/null || true
 cd "$PROJECT_DIR"
 
-# Run with all auto-yes flags, but capture success/failure
+# Ensure ~/.local/bin exists and is first on PATH for this shell
+mkdir -p "$HOME/.local/bin" 2>/dev/null || true
+PATH="$HOME/.local/bin:$PATH"
+export PATH
+
+# Run with all auto-yes flags, but capture the actual exit status
+set -o pipefail
 SETUP_SUCCESS=false
-if env NON_INTERACTIVE=1 ASSUME_YES=1 "$TEMP_DIR/claude-chroma.sh" 2>&1 | while IFS= read -r line; do
+env NON_INTERACTIVE="${NON_INTERACTIVE:-1}" ASSUME_YES="${ASSUME_YES:-1}" \
+  "$TEMP_DIR/claude-chroma.sh" 2>&1 | while IFS= read -r line; do
     # Filter for important messages
     echo "$line" | sed 's/\x1b\[[0-9;]*m//g' | grep -E "(✓|Created|Configured|Complete|Warning|Error)" || true
-done; then
+  done
+child_status=${PIPESTATUS[0]}
+if [[ ${child_status} -eq 0 ]]; then
     SETUP_SUCCESS=true
 fi
 
@@ -378,13 +481,24 @@ else
     echo ""
 fi
 
-echo ""
-echo -e "${YELLOW}Press Enter to close this window...${NC}"
-read -r
+# -----------------------------------------------------------------------------
+# Friendly pause only when interactive in a real terminal
+# -----------------------------------------------------------------------------
+maybe_pause() {
+  # Do NOT pause for automation or non-interactive shells
+  if [[ "${NON_INTERACTIVE:-0}" == "1" ]]; then return 0; fi
+  # Only pause if stdin and stdout are ttys
+  if [[ -t 0 && -t 1 ]]; then
+    echo ""
+    echo -e "${YELLOW}Press Enter to close this window...${NC}"
+    read -r -p "" _ </dev/tty
+  fi
+}
+maybe_pause
 
 # Script ends here - no automatic Claude launch that would cause TTY issues
 
-exit 0
+exit "${child_status:-0}"
 
 # ---------------------------------------------------------------------------
 # Optional embedded payload (offline assets; base64 tar.gz) section

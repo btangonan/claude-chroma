@@ -686,18 +686,32 @@ json_emit_mcp_config() {
     # Generate MCP configuration JSON safely with infinite timeout settings
     local command="$1"
     local data_dir="$2"
+    shift 2
+    local base_args=("$@")  # Additional base args from choose_mcp_runner
 
     require_cmd jq "Install with: brew install jq (Mac) or apt-get install jq (Linux)"
+
+    # Build the args array based on the command type
+    local args_json
+    if [[ ${#base_args[@]} -eq 0 ]]; then
+        # No base args means it's chroma-mcp direct
+        args_json='["--client-type", "persistent", "--data-dir", $dir]'
+    else
+        # Has base args (uvx or python -m)
+        args_json='$base_args + ["--client-type", "persistent", "--data-dir", $dir]'
+    fi
 
     jq -n \
         --arg cmd "$command" \
         --arg dir "$data_dir" \
+        --argjson base_args "$(printf '%s\n' "${base_args[@]}" | jq -Rs 'split("\n")[:-1]')" \
+        --argjson args "$args_json" \
         '{
           mcpServers: {
             chroma: {
               type: "stdio",
               command: $cmd,
-              args: ["-qq", "chroma-mcp", "--client-type", "persistent", "--data-dir", $dir],
+              args: $args,
               env: {
                 ANONYMIZED_TELEMETRY: "FALSE",
                 PYTHONUNBUFFERED: "1",
@@ -739,17 +753,31 @@ json_merge_mcp_config() {
     local existing_file="$1"
     local command="$2"
     local data_dir="$3"
+    shift 3
+    local base_args=("$@")  # Additional base args from choose_mcp_runner
 
     require_cmd jq "Install with: brew install jq (Mac) or apt-get install jq (Linux)"
+
+    # Build the args array based on the command type
+    local args_json
+    if [[ ${#base_args[@]} -eq 0 ]]; then
+        # No base args means it's chroma-mcp direct
+        args_json='["--client-type", "persistent", "--data-dir", $dir]'
+    else
+        # Has base args (uvx or python -m)
+        args_json='$base_args + ["--client-type", "persistent", "--data-dir", $dir]'
+    fi
 
     jq \
         --arg cmd "$command" \
         --arg dir "$data_dir" \
+        --argjson base_args "$(printf '%s\n' "${base_args[@]}" | jq -Rs 'split("\n")[:-1]')" \
+        --argjson args "$args_json" \
         '.mcpServers = (.mcpServers // {}) |
          .mcpServers.chroma = {
            type: "stdio",
            command: $cmd,
-           args: ["-qq", "chroma-mcp", "--client-type", "persistent", "--data-dir", $dir],
+           args: $args,
            env: {
              ANONYMIZED_TELEMETRY: "FALSE",
              PYTHONUNBUFFERED: "1",
@@ -832,7 +860,7 @@ run_with_timeout() {
         timeout "$timeout_secs" "$@"
     elif command -v gtimeout >/dev/null 2>&1; then
         gtimeout "$timeout_secs" "$@"
-    else
+    elif command -v python3 >/dev/null 2>&1; then
         # Python fallback
         python3 - <<EOF "$timeout_secs" "$@"
 import subprocess, sys, time
@@ -850,6 +878,10 @@ if p.poll() is None:
     sys.exit(124)
 sys.exit(p.returncode)
 EOF
+    else
+        # No timeout utility available - run without timeout
+        print_warning "No timeout utility available (timeout, gtimeout, or python3), running without timeout"
+        "$@"
     fi
 }
 
@@ -920,31 +952,29 @@ check_prerequisites() {
         print_warning "Python3 not found (used for fallback operations)"
     fi
 
-    # Check for uvx (soft requirement during setup).
-    # We only need uvx at runtime; config generation should still proceed.
+    # uvx is required to RUN the Chroma MCP server referenced in .mcp.json.
     if ! command -v uvx >/dev/null 2>&1; then
-        print_warning "uvx not found. We'll still generate .mcp.json; the server will install or run on first use."
-        # In non-interactive/isolated envs, do not attempt network installs.
-        if [[ "$NON_INTERACTIVE" != "1" ]]; then
-            if prompt_yes "Attempt to install uv with pip/pipx now?"; then
-                print_info "Installing uv (best-effort)..."
+        print_warning "uvx not found. ChromaDB MCP will NOT work without it."
+        if [[ "${NON_INTERACTIVE:-0}" != "1" ]]; then
+            if prompt_yes "Install uvx now using pip/pipx?"; then
+                print_info "Installing uv..."
                 if command -v pipx >/dev/null 2>&1 && pipx install uv >/dev/null 2>&1; then
                     export PATH="$HOME/.local/bin:$PATH"
-                    print_status "uvx installed via pipx"
                 elif command -v pip3 >/dev/null 2>&1 && pip3 install --user uv >/dev/null 2>&1; then
                     export PATH="$HOME/.local/bin:$PATH"
-                    print_status "uvx installed via pip3"
                 elif command -v pip >/dev/null 2>&1 && pip install --user uv >/dev/null 2>&1; then
                     export PATH="$HOME/.local/bin:$PATH"
-                    print_status "uvx installed via pip"
-                else
-                    print_warning "uv installation attempt failed; continuing without it"
                 fi
             fi
         fi
-    else
-        print_status "uvx found at: $(command -v uvx)"
+        if ! command -v uvx >/dev/null 2>&1; then
+            print_error "uvx is required but not installed."
+            print_info "Install with: pipx install uv   or   pip install --user uv"
+            print_info "Then re-run setup (or use the one-click installer which embeds uvx)."
+            exit 1
+        fi
     fi
+    print_status "uvx found at: $(command -v uvx)"
 
     # Check Claude CLI (optional)
     if command -v claude >/dev/null 2>&1; then
@@ -1043,10 +1073,35 @@ create_directory_structure() {
     print_status "Directory structure ready"
 }
 
+# Choose the best available MCP runner (optional fallback logic)
+choose_mcp_runner() {
+    if command -v uvx >/dev/null 2>&1; then
+        MCP_CMD="uvx"
+        MCP_ARGS_BASE=("-qq" "chroma-mcp")
+        return 0
+    elif command -v chroma-mcp >/dev/null 2>&1; then
+        MCP_CMD="chroma-mcp"
+        MCP_ARGS_BASE=()
+        return 0
+    elif command -v python3 >/dev/null 2>&1 && python3 -c "import chroma_mcp" 2>/dev/null; then
+        MCP_CMD="python3"
+        MCP_ARGS_BASE=("-m" "chroma_mcp")
+        return 0
+    fi
+    return 1
+}
+
 create_mcp_config() {
     print_info "Configuring MCP server..."
 
-    local uvx_cmd="uvx"  # Use command name, not full path
+    # Choose the best available runner for Chroma MCP
+    if ! choose_mcp_runner; then
+        print_error "No viable runner for Chroma MCP (need uvx, chroma-mcp, or python3 -m chroma_mcp)."
+        print_info "Install with: pipx install uv   or   pip install chroma-mcp"
+        exit 1
+    fi
+
+    print_status "Using MCP runner: $MCP_CMD"
     local data_dir_rel="${DATA_DIR_OVERRIDE:-.chroma}"
     local project_dir_abs
     project_dir_abs="$(pwd)"
@@ -1060,10 +1115,7 @@ create_mcp_config() {
     # Resolve to an absolute path within the project root
     # We prefer an absolute path in .mcp.json to avoid CWD fragility.
     local data_dir_abs="$project_dir_abs/$data_dir_rel"
-    if command -v realpath >/dev/null 2>&1; then
-        # macOS realpath doesn't support -m, just normalize the path
-        data_dir_abs="$(cd "$(dirname "$data_dir_abs")" 2>/dev/null && pwd)/$(basename "$data_dir_abs")" || data_dir_abs="$data_dir_abs"
-    fi
+    data_dir_abs="$(require_realpath "$data_dir_abs")"
 
     # Ensure the resolved absolute dir is still inside the project
     if [[ "$DRY_RUN" != "1" ]]; then
@@ -1094,7 +1146,7 @@ create_mcp_config() {
             backup_if_exists ".mcp.json"
 
             local merged_config
-            merged_config=$(json_merge_mcp_config ".mcp.json" "$uvx_cmd" "$data_dir_abs")
+            merged_config=$(json_merge_mcp_config ".mcp.json" "$MCP_CMD" "$data_dir_abs" "${MCP_ARGS_BASE[@]}")
 
             write_file_safe ".mcp.json" "$merged_config"
             chmod 600 .mcp.json 2>/dev/null || true
@@ -1106,7 +1158,7 @@ create_mcp_config() {
 
     if [[ "$SKIP_MCP" != "true" ]]; then
         local mcp_config
-        mcp_config=$(json_emit_mcp_config "$uvx_cmd" "$data_dir_abs")
+        mcp_config=$(json_emit_mcp_config "$MCP_CMD" "$data_dir_abs" "${MCP_ARGS_BASE[@]}")
 
         write_file_safe ".mcp.json" "$mcp_config"
         chmod 600 .mcp.json 2>/dev/null || true
@@ -1648,18 +1700,23 @@ print_summary() {
 # PROJECT REGISTRY
 # ============================================================================
 add_to_registry() {
-    # Use XDG config home if available
-    local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
-    local registry="$config_dir/claude/chroma_projects.jsonl"
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    # Use bin/registry.sh for atomic registry operations
+    if [[ -x "bin/registry.sh" ]]; then
+        bin/registry.sh add "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" || true
+    else
+        # Fallback to direct write if registry script not available
+        local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+        local registry="$config_dir/claude/chroma_projects.jsonl"
+        local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Create registry directory if needed
-    mkdir -p "$(dirname "$registry")"
+        # Create registry directory if needed
+        mkdir -p "$(dirname "$registry")"
 
-    # Add entry if not already present (JSONL format)
-    if ! grep -Fq "\"path\":\"$PROJECT_DIR\"" "$registry" 2>/dev/null; then
-        printf '{"name":"%s","path":"%s","collection":"%s","data_dir":"%s/.chroma","created_at":"%s","sessions":0}\n' \
-            "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" "$PROJECT_DIR" "$timestamp" >> "$registry"
+        # Add entry if not already present (JSONL format)
+        if ! grep -Fq "\"path\":\"$PROJECT_DIR\"" "$registry" 2>/dev/null; then
+            printf '{"name":"%s","path":"%s","collection":"%s","data_dir":"%s/.chroma","created_at":"%s","sessions":0}\n' \
+                "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" "$PROJECT_DIR" "$timestamp" >> "$registry"
+        fi
     fi
 }
 
