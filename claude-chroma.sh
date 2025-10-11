@@ -654,6 +654,13 @@ write_file_safe() {
         return 0
     fi
 
+    # Safety check: prevent writing empty or suspiciously small files
+    if [[ -z "$content" ]]; then
+        print_error "Attempted to write empty content to $dest"
+        print_info "This is likely a bug. Content validation should happen before write_file_safe."
+        exit 1
+    fi
+
     backup_if_exists "$dest"
     atomic_write "$dest" "$content"
     touch_track "$dest"
@@ -692,41 +699,60 @@ json_emit_mcp_config() {
     require_cmd jq "Install with: brew install jq (Mac) or apt-get install jq (Linux)"
 
     # Build the args array based on the command type
-    local args_json
     if [[ ${#base_args[@]} -eq 0 ]]; then
         # No base args means it's chroma-mcp direct
-        args_json='["--client-type", "persistent", "--data-dir", $dir]'
+        jq -n \
+            --arg cmd "$command" \
+            --arg dir "$data_dir" \
+            '{
+              mcpServers: {
+                chroma: {
+                  type: "stdio",
+                  command: $cmd,
+                  args: ["--client-type", "persistent", "--data-dir", $dir],
+                  env: {
+                    ANONYMIZED_TELEMETRY: "FALSE",
+                    PYTHONUNBUFFERED: "1",
+                    TOKENIZERS_PARALLELISM: "False",
+                    CHROMA_SERVER_KEEP_ALIVE: "0",
+                    CHROMA_CLIENT_TIMEOUT: "0"
+                  },
+                  initializationOptions: {
+                    timeout: 0,
+                    keepAlive: true,
+                    retryAttempts: 5
+                  }
+                }
+              }
+            }'
     else
         # Has base args (uvx or python -m)
-        args_json='$base_args + ["--client-type", "persistent", "--data-dir", $dir]'
-    fi
-
-    jq -n \
-        --arg cmd "$command" \
-        --arg dir "$data_dir" \
-        --argjson base_args "$(printf '%s\n' "${base_args[@]}" | jq -Rs 'split("\n")[:-1]')" \
-        --argjson args "$args_json" \
-        '{
-          mcpServers: {
-            chroma: {
-              type: "stdio",
-              command: $cmd,
-              args: $args,
-              env: {
-                ANONYMIZED_TELEMETRY: "FALSE",
-                PYTHONUNBUFFERED: "1",
-                TOKENIZERS_PARALLELISM: "False",
-                CHROMA_SERVER_KEEP_ALIVE: "0",
-                CHROMA_CLIENT_TIMEOUT: "0"
-              },
-              initializationOptions: {
-                timeout: 0,
-                keepAlive: true,
-                retryAttempts: 5
+        jq -n \
+            --arg cmd "$command" \
+            --arg dir "$data_dir" \
+            --argjson base_args "$(printf '%s\n' "${base_args[@]}" | jq -Rs 'split("\n")[:-1]')" \
+            '{
+              mcpServers: {
+                chroma: {
+                  type: "stdio",
+                  command: $cmd,
+                  args: ($base_args + ["--client-type", "persistent", "--data-dir", $dir]),
+                  env: {
+                    ANONYMIZED_TELEMETRY: "FALSE",
+                    PYTHONUNBUFFERED: "1",
+                    TOKENIZERS_PARALLELISM: "False",
+                    CHROMA_SERVER_KEEP_ALIVE: "0",
+                    CHROMA_CLIENT_TIMEOUT: "0"
+                  },
+                  initializationOptions: {
+                    timeout: 0,
+                    keepAlive: true,
+                    retryAttempts: 5
+                  }
+                }
               }
-            }
-          }
-        }'
+            }'
+    fi
 }
 
 json_validate() {
@@ -759,38 +785,54 @@ json_merge_mcp_config() {
     require_cmd jq "Install with: brew install jq (Mac) or apt-get install jq (Linux)"
 
     # Build the args array based on the command type
-    local args_json
     if [[ ${#base_args[@]} -eq 0 ]]; then
         # No base args means it's chroma-mcp direct
-        args_json='["--client-type", "persistent", "--data-dir", $dir]'
+        jq \
+            --arg cmd "$command" \
+            --arg dir "$data_dir" \
+            '.mcpServers = (.mcpServers // {}) |
+             .mcpServers.chroma = {
+               type: "stdio",
+               command: $cmd,
+               args: ["--client-type", "persistent", "--data-dir", $dir],
+               env: {
+                 ANONYMIZED_TELEMETRY: "FALSE",
+                 PYTHONUNBUFFERED: "1",
+                 TOKENIZERS_PARALLELISM: "False",
+                 CHROMA_SERVER_KEEP_ALIVE: "0",
+                 CHROMA_CLIENT_TIMEOUT: "0"
+               },
+               initializationOptions: {
+                 timeout: 0,
+                 keepAlive: true,
+                 retryAttempts: 5
+               }
+             }' "$existing_file"
     else
         # Has base args (uvx or python -m)
-        args_json='$base_args + ["--client-type", "persistent", "--data-dir", $dir]'
+        jq \
+            --arg cmd "$command" \
+            --arg dir "$data_dir" \
+            --argjson base_args "$(printf '%s\n' "${base_args[@]}" | jq -Rs 'split("\n")[:-1]')" \
+            '.mcpServers = (.mcpServers // {}) |
+             .mcpServers.chroma = {
+               type: "stdio",
+               command: $cmd,
+               args: ($base_args + ["--client-type", "persistent", "--data-dir", $dir]),
+               env: {
+                 ANONYMIZED_TELEMETRY: "FALSE",
+                 PYTHONUNBUFFERED: "1",
+                 TOKENIZERS_PARALLELISM: "False",
+                 CHROMA_SERVER_KEEP_ALIVE: "0",
+                 CHROMA_CLIENT_TIMEOUT: "0"
+               },
+               initializationOptions: {
+                 timeout: 0,
+                 keepAlive: true,
+                 retryAttempts: 5
+               }
+             }' "$existing_file"
     fi
-
-    jq \
-        --arg cmd "$command" \
-        --arg dir "$data_dir" \
-        --argjson base_args "$(printf '%s\n' "${base_args[@]}" | jq -Rs 'split("\n")[:-1]')" \
-        --argjson args "$args_json" \
-        '.mcpServers = (.mcpServers // {}) |
-         .mcpServers.chroma = {
-           type: "stdio",
-           command: $cmd,
-           args: $args,
-           env: {
-             ANONYMIZED_TELEMETRY: "FALSE",
-             PYTHONUNBUFFERED: "1",
-             TOKENIZERS_PARALLELISM: "False",
-             CHROMA_SERVER_KEEP_ALIVE: "0",
-             CHROMA_CLIENT_TIMEOUT: "0"
-           },
-           initializationOptions: {
-             timeout: 0,
-             keepAlive: true,
-             retryAttempts: 5
-           }
-         }' "$existing_file"
 }
 
 # ============================================================================
@@ -1209,6 +1251,16 @@ TPL
             # Minimal variable expansion for ${PROJECT_COLLECTION}
             CONTENT="$(awk -v v="$PROJECT_COLLECTION" '{gsub(/\${PROJECT_COLLECTION}/, v)}1' templates/CLAUDE.md.tpl)"
         fi
+
+        # Validate content before writing
+        if [[ -z "$CONTENT" ]] || [[ "${#CONTENT}" -lt 10 ]]; then
+            print_error "Template expansion failed - CONTENT is empty or too short"
+            print_info "Template file: templates/CLAUDE.md.tpl"
+            print_info "PROJECT_COLLECTION: $PROJECT_COLLECTION"
+            print_info "Content length: ${#CONTENT} bytes"
+            exit 1
+        fi
+
         write_file_safe "CLAUDE.md" "$CONTENT"
     fi
     print_status "Created CLAUDE.md from template"
@@ -1682,9 +1734,7 @@ print_summary() {
         echo ""
         print_info "Next steps:"
         echo "  1. cd \"$PROJECT_DIR\""
-        echo "  2. Run ONE of these commands:"
-        echo "     $ claude           (starts Claude with ChromaDB)"
-        echo "     $ ./start-claude-chroma.sh"
+        echo "  2. Run: claude"
         echo "  3. Claude auto-initializes ChromaDB"
 
         echo ""
@@ -1864,7 +1914,6 @@ main() {
     ensure_settings_memory_discipline
     create_gitignore
     create_init_docs
-    create_launcher
     # Shell function is OFF by default; only in --full mode
     if [[ "$FULL" == "1" ]]; then
         setup_shell_function
