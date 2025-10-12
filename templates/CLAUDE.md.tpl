@@ -39,6 +39,20 @@ mcp__chroma__chroma_query_documents {
 3. List open PRs or issues that touch the same area.
 4. Only then propose changes.
 
+## 📝 Memory Checkpoint Rules
+
+**Every 5 interactions or after completing a task**, pause and check:
+- Did I discover new decisions, fixes, or patterns?
+- Did the user express any preferences?
+- Did I solve tricky problems or learn about architecture?
+
+If yes → Log memory IMMEDIATELY using the schema above.
+
+**During long sessions (>10 interactions)**:
+- Stop and review: Have I logged recent learnings?
+- Check for unrecorded decisions or fixes
+- Remember: Each memory helps future sessions
+
 ## ⚡ Activation
 Read this file at session start.
 Then read `.chroma/context/*.md` (titles + first bullets) and list which ones you used.

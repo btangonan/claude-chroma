@@ -1223,9 +1223,9 @@ create_claude_md() {
         backup_claude_md
     fi
 
-    # Ensure template exists or seed a minimal one
-    if [[ ! -f "templates/CLAUDE.md.tpl" ]]; then
-        print_warning "templates/CLAUDE.md.tpl not found. Seeding minimal template..."
+    # Ensure template exists and is non-empty, or seed a minimal one
+    if [[ ! -f "templates/CLAUDE.md.tpl" ]] || [[ ! -s "templates/CLAUDE.md.tpl" ]]; then
+        print_warning "templates/CLAUDE.md.tpl missing or empty. Seeding minimal template..."
         if [[ "$DRY_RUN" != "1" ]]; then
             cat > templates/CLAUDE.md.tpl <<'TPL'
 # CLAUDE.md — Project Contract
@@ -1253,11 +1253,38 @@ TPL
         fi
 
         # Validate content before writing
+        # Check for whitespace-only content FIRST (before size check)
+        if [[ "$CONTENT" =~ ^[[:space:]]*$ ]]; then
+            print_error "Template expansion produced whitespace-only content"
+            print_info "Template file: templates/CLAUDE.md.tpl"
+            print_info "This indicates template is empty or contains only whitespace"
+            exit 1
+        fi
+
+        # Then check for empty or too-short content
         if [[ -z "$CONTENT" ]] || [[ "${#CONTENT}" -lt 10 ]]; then
             print_error "Template expansion failed - CONTENT is empty or too short"
             print_info "Template file: templates/CLAUDE.md.tpl"
             print_info "PROJECT_COLLECTION: $PROJECT_COLLECTION"
             print_info "Content length: ${#CONTENT} bytes"
+            exit 1
+        fi
+
+        # Check for unresolved placeholders
+        # NOTE: This check has a known limitation with envsubst:
+        #   - envsubst removes undefined variables entirely (replaces with empty string)
+        #   - Placeholder typos like ${PROJECT_COLLCETION_TYPO} become blank, not literal
+        #   - This means typos in variable names cannot be detected by this check
+        #   - Mitigation: Template is version-controlled and manually tested
+        if [[ "$CONTENT" =~ \$\{[A-Z_][A-Z0-9_]*\} ]]; then
+            print_error "Template contains unresolved placeholders"
+            print_info "Template file: templates/CLAUDE.md.tpl"
+            print_info "Found unresolved variable(s) like \${VARIABLE_NAME}"
+            print_info "This means template expansion failed or template has typos"
+            # Show which placeholders weren't resolved
+            local unresolved
+            unresolved=$(echo "$CONTENT" | grep -oE '\$\{[A-Z_][A-Z0-9_]*\}' | sort -u | head -5)
+            print_info "Unresolved placeholders: $unresolved"
             exit 1
         fi
 
@@ -1924,5 +1951,7 @@ main() {
     print_summary
 }
 
-# Run main function
-main "$@"
+# Run main function only if script is executed, not sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
