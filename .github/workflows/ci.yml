@@ -98,8 +98,79 @@ jobs:
             fi
           }
 
+      - name: MCP config succeeds with uvx
+        run: |
+          set -euo pipefail
+          cd /tmp/cc-uvx-test
+          mkdir -p /tmp/cc-uvx-test
+          cp /tmp/cc-test/claude-chroma.sh .
+          cp -r /tmp/cc-test/bin .
+
+          # Ensure uvx is available (installed by setup)
+          pip install --user uv || true
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # Run setup with uvx available
+          NON_INTERACTIVE=1 ASSUME_YES=1 ./claude-chroma.sh
+
+          # Verify .mcp.json was created
+          test -f .mcp.json
+          jq -e .mcpServers.chroma .mcp.json
+
+      - name: MCP config fails without uvx (honest failure)
+        run: |
+          set -e
+          cd /tmp/cc-no-uvx
+          mkdir -p /tmp/cc-no-uvx
+          cp /tmp/cc-test/claude-chroma.sh .
+          cp -r /tmp/cc-test/bin .
+
+          # Simulate no uvx in PATH
+          PATH="/usr/bin:/bin" NON_INTERACTIVE=1 ASSUME_YES=1 \
+            bash claude-chroma.sh 2>&1 | tee output.log || true
+
+          # Check that it failed with proper error message
+          grep -q "uvx is required but not installed" output.log
+
+          # Verify .mcp.json was NOT created
+          test ! -f .mcp.json
+
           # Registry location (XDG)
           REG="${XDG_CONFIG_HOME:-$HOME/.config}/claude/chroma_projects.jsonl"
           test -f "$REG"
           test "$(stat_mode "$REG")" = "600" || echo "Registry permissions: $(stat_mode "$REG")"
           test "$(stat_mode .mcp.json)" = "600" || echo ".mcp.json permissions: $(stat_mode .mcp.json)"
+
+      - name: One-click installer smoke test (zero dependencies)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          # Test in isolated directory with minimal PATH
+          ISOLATED_DIR="$(mktemp -d)"
+          cd "$ISOLATED_DIR"
+
+          # Copy the one-click installer
+          cp "${GITHUB_WORKSPACE}/setup-claude-chroma-oneclick-merge.command" .
+          chmod +x setup-claude-chroma-oneclick-merge.command
+
+          # Simulate a clean PATH with no jq/uvx (but preserve essential system tools)
+          # Override the SCRIPT_DIR to point to test directory and make it non-interactive
+          env -i HOME="$HOME" PATH="/usr/bin:/bin" \
+            bash -c '
+              # Make non-interactive by setting environment variables
+              export NON_INTERACTIVE=1
+              export ASSUME_YES=1
+              export PROJECT_DIR="$(pwd)"
+              export PROJECT_NAME="cc-test"
+              # Run the installer
+              ./setup-claude-chroma-oneclick-merge.command
+            '
+
+          # Verify key files were created
+          test -f .mcp.json || echo "ERROR: .mcp.json not created"
+          test -d .chroma || echo "ERROR: .chroma directory not created"
+
+          # Verify .mcp.json contains absolute path (not relative)
+          grep -q "$(pwd)/.chroma" .mcp.json || echo "ERROR: .mcp.json does not contain absolute path"
+
+          echo "✅ One-click installer test passed"

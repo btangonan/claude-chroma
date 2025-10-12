@@ -22,12 +22,27 @@ Error: MCP server 'chromadb' not available
    uvx chroma-mcp --help
    ```
 
-3. If uvx not found, install uv (which includes uvx):
+3. If uvx not found, you have two options:
+
+   **Option A: Use the One-Click Installer (macOS only)**
+   - Download `setup-claude-chroma-oneclick-fixed.command`
+   - Double-click to run - it includes embedded uvx!
+
+   **Option B: Manual installation**
    ```bash
+   # Install via pipx (recommended)
+   pipx install uv
+
+   # Or via pip
+   pip install --user uv
+
+   # Or via the official installer
    curl -LsSf https://astral.sh/uv/install.sh | sh
    # Restart terminal or source profile
    source ~/.profile
    ```
+
+   **Important**: Without uvx, the ChromaDB MCP server WILL NOT WORK and Claude won't have persistent memory.
 
 ---
 

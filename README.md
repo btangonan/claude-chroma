@@ -55,10 +55,30 @@ CHROMA_SETUP_ADD_SHELL_FN=1 ./claude-chroma.sh
 ## Requirements
 
 - macOS or Linux
-- [uv package manager](https://docs.astral.sh/uv/getting-started/installation/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - Claude Desktop app
+- **uvx** (Python package runner) - Required to run the ChromaDB MCP server
 
-**Note**: The script will check for `uvx` and guide you through installation if needed. Python is auto-downloaded by uvx when required.
+### Installing uvx
+
+**Option 1: One-Click Installer (Recommended for macOS)**
+- The `setup-claude-chroma-oneclick-fixed.command` installer includes embedded uvx
+- No manual installation needed - it's fully self-contained!
+
+**Option 2: Manual Installation**
+```bash
+# Install via pipx (recommended)
+pipx install uv
+
+# Or via pip
+pip install --user uv
+
+# Or via the official installer
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Important**: Without uvx, the ChromaDB MCP server cannot run and Claude will not have persistent memory. The setup script will verify uvx is installed and fail with clear instructions if it's missing.
+
+**Note**: Python is auto-downloaded by uvx when required - you don't need to install Python separately.
 
 **Network Filesystems**: If your project is on NFS, SMB, or similar network storage, file locking behavior may vary. The registry uses cross-platform locks for safety but network filesystems may introduce occasional delays in lock acquisition.
 

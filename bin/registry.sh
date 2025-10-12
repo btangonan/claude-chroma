@@ -56,7 +56,9 @@ _lock_run() { # _lock_run <lockfile> <cmd...>
 
 # Atomic write helper
 _write_atomic() { # _write_atomic <target> [mode]
-    local target="$1" mode="${2:-600}" tmp="${target}.tmp.$$"
+    local target="$1"
+    local mode="${2:-600}"
+    local tmp="${target}.tmp.$$"
     cat >"$tmp"
     chmod "$mode" "$tmp" 2>/dev/null || true
     mv -f "$tmp" "$target"

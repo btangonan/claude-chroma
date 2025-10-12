@@ -654,6 +654,13 @@ write_file_safe() {
         return 0
     fi
 
+    # Safety check: prevent writing empty or suspiciously small files
+    if [[ -z "$content" ]]; then
+        print_error "Attempted to write empty content to $dest"
+        print_info "This is likely a bug. Content validation should happen before write_file_safe."
+        exit 1
+    fi
+
     backup_if_exists "$dest"
     atomic_write "$dest" "$content"
     touch_track "$dest"
@@ -686,33 +693,66 @@ json_emit_mcp_config() {
     # Generate MCP configuration JSON safely with infinite timeout settings
     local command="$1"
     local data_dir="$2"
+    shift 2
+    local base_args=("$@")  # Additional base args from choose_mcp_runner
 
     require_cmd jq "Install with: brew install jq (Mac) or apt-get install jq (Linux)"
 
-    jq -n \
-        --arg cmd "$command" \
-        --arg dir "$data_dir" \
-        '{
-          mcpServers: {
-            chroma: {
-              type: "stdio",
-              command: $cmd,
-              args: ["-qq", "chroma-mcp", "--client-type", "persistent", "--data-dir", $dir],
-              env: {
-                ANONYMIZED_TELEMETRY: "FALSE",
-                PYTHONUNBUFFERED: "1",
-                TOKENIZERS_PARALLELISM: "False",
-                CHROMA_SERVER_KEEP_ALIVE: "0",
-                CHROMA_CLIENT_TIMEOUT: "0"
-              },
-              initializationOptions: {
-                timeout: 0,
-                keepAlive: true,
-                retryAttempts: 5
+    # Build the args array based on the command type
+    if [[ ${#base_args[@]} -eq 0 ]]; then
+        # No base args means it's chroma-mcp direct
+        jq -n \
+            --arg cmd "$command" \
+            --arg dir "$data_dir" \
+            '{
+              mcpServers: {
+                chroma: {
+                  type: "stdio",
+                  command: $cmd,
+                  args: ["--client-type", "persistent", "--data-dir", $dir],
+                  env: {
+                    ANONYMIZED_TELEMETRY: "FALSE",
+                    PYTHONUNBUFFERED: "1",
+                    TOKENIZERS_PARALLELISM: "False",
+                    CHROMA_SERVER_KEEP_ALIVE: "0",
+                    CHROMA_CLIENT_TIMEOUT: "0"
+                  },
+                  initializationOptions: {
+                    timeout: 0,
+                    keepAlive: true,
+                    retryAttempts: 5
+                  }
+                }
               }
-            }
-          }
-        }'
+            }'
+    else
+        # Has base args (uvx or python -m)
+        jq -n \
+            --arg cmd "$command" \
+            --arg dir "$data_dir" \
+            --argjson base_args "$(printf '%s\n' "${base_args[@]}" | jq -Rs 'split("\n")[:-1]')" \
+            '{
+              mcpServers: {
+                chroma: {
+                  type: "stdio",
+                  command: $cmd,
+                  args: ($base_args + ["--client-type", "persistent", "--data-dir", $dir]),
+                  env: {
+                    ANONYMIZED_TELEMETRY: "FALSE",
+                    PYTHONUNBUFFERED: "1",
+                    TOKENIZERS_PARALLELISM: "False",
+                    CHROMA_SERVER_KEEP_ALIVE: "0",
+                    CHROMA_CLIENT_TIMEOUT: "0"
+                  },
+                  initializationOptions: {
+                    timeout: 0,
+                    keepAlive: true,
+                    retryAttempts: 5
+                  }
+                }
+              }
+            }'
+    fi
 }
 
 json_validate() {
@@ -739,30 +779,60 @@ json_merge_mcp_config() {
     local existing_file="$1"
     local command="$2"
     local data_dir="$3"
+    shift 3
+    local base_args=("$@")  # Additional base args from choose_mcp_runner
 
     require_cmd jq "Install with: brew install jq (Mac) or apt-get install jq (Linux)"
 
-    jq \
-        --arg cmd "$command" \
-        --arg dir "$data_dir" \
-        '.mcpServers = (.mcpServers // {}) |
-         .mcpServers.chroma = {
-           type: "stdio",
-           command: $cmd,
-           args: ["-qq", "chroma-mcp", "--client-type", "persistent", "--data-dir", $dir],
-           env: {
-             ANONYMIZED_TELEMETRY: "FALSE",
-             PYTHONUNBUFFERED: "1",
-             TOKENIZERS_PARALLELISM: "False",
-             CHROMA_SERVER_KEEP_ALIVE: "0",
-             CHROMA_CLIENT_TIMEOUT: "0"
-           },
-           initializationOptions: {
-             timeout: 0,
-             keepAlive: true,
-             retryAttempts: 5
-           }
-         }' "$existing_file"
+    # Build the args array based on the command type
+    if [[ ${#base_args[@]} -eq 0 ]]; then
+        # No base args means it's chroma-mcp direct
+        jq \
+            --arg cmd "$command" \
+            --arg dir "$data_dir" \
+            '.mcpServers = (.mcpServers // {}) |
+             .mcpServers.chroma = {
+               type: "stdio",
+               command: $cmd,
+               args: ["--client-type", "persistent", "--data-dir", $dir],
+               env: {
+                 ANONYMIZED_TELEMETRY: "FALSE",
+                 PYTHONUNBUFFERED: "1",
+                 TOKENIZERS_PARALLELISM: "False",
+                 CHROMA_SERVER_KEEP_ALIVE: "0",
+                 CHROMA_CLIENT_TIMEOUT: "0"
+               },
+               initializationOptions: {
+                 timeout: 0,
+                 keepAlive: true,
+                 retryAttempts: 5
+               }
+             }' "$existing_file"
+    else
+        # Has base args (uvx or python -m)
+        jq \
+            --arg cmd "$command" \
+            --arg dir "$data_dir" \
+            --argjson base_args "$(printf '%s\n' "${base_args[@]}" | jq -Rs 'split("\n")[:-1]')" \
+            '.mcpServers = (.mcpServers // {}) |
+             .mcpServers.chroma = {
+               type: "stdio",
+               command: $cmd,
+               args: ($base_args + ["--client-type", "persistent", "--data-dir", $dir]),
+               env: {
+                 ANONYMIZED_TELEMETRY: "FALSE",
+                 PYTHONUNBUFFERED: "1",
+                 TOKENIZERS_PARALLELISM: "False",
+                 CHROMA_SERVER_KEEP_ALIVE: "0",
+                 CHROMA_CLIENT_TIMEOUT: "0"
+               },
+               initializationOptions: {
+                 timeout: 0,
+                 keepAlive: true,
+                 retryAttempts: 5
+               }
+             }' "$existing_file"
+    fi
 }
 
 # ============================================================================
@@ -832,7 +902,7 @@ run_with_timeout() {
         timeout "$timeout_secs" "$@"
     elif command -v gtimeout >/dev/null 2>&1; then
         gtimeout "$timeout_secs" "$@"
-    else
+    elif command -v python3 >/dev/null 2>&1; then
         # Python fallback
         python3 - <<EOF "$timeout_secs" "$@"
 import subprocess, sys, time
@@ -850,6 +920,10 @@ if p.poll() is None:
     sys.exit(124)
 sys.exit(p.returncode)
 EOF
+    else
+        # No timeout utility available - run without timeout
+        print_warning "No timeout utility available (timeout, gtimeout, or python3), running without timeout"
+        "$@"
     fi
 }
 
@@ -920,40 +994,29 @@ check_prerequisites() {
         print_warning "Python3 not found (used for fallback operations)"
     fi
 
-    # Check for uvx
+    # uvx is required to RUN the Chroma MCP server referenced in .mcp.json.
     if ! command -v uvx >/dev/null 2>&1; then
-        print_error "uvx is not installed"
-        print_info "ChromaDB MCP server requires uvx"
-        print_info ""
-        print_info "Install options:"
-        print_info "  1. pip install --user uv"
-        print_info "  2. pipx install uv"
-        print_info "  3. brew install uv (macOS/Linux)"
-        print_info "  4. https://github.com/astral-sh/uv"
-
-        if prompt_yes "Try installing with pip?"; then
-            print_info "Installing uv with pip..."
-            if pip install --user uv || pip3 install --user uv; then
-                ensure_path_line
-                export PATH="$HOME/.local/bin:$PATH"
-
-                if command -v uvx >/dev/null 2>&1; then
-                    print_status "uvx installed successfully"
-                else
-                    print_error "uvx installed but not in PATH"
-                    print_info "Restart terminal or run: export PATH=\"\$HOME/.local/bin:\$PATH\""
-                    has_issues=true
+        print_warning "uvx not found. ChromaDB MCP will NOT work without it."
+        if [[ "${NON_INTERACTIVE:-0}" != "1" ]]; then
+            if prompt_yes "Install uvx now using pip/pipx?"; then
+                print_info "Installing uv..."
+                if command -v pipx >/dev/null 2>&1 && pipx install uv >/dev/null 2>&1; then
+                    export PATH="$HOME/.local/bin:$PATH"
+                elif command -v pip3 >/dev/null 2>&1 && pip3 install --user uv >/dev/null 2>&1; then
+                    export PATH="$HOME/.local/bin:$PATH"
+                elif command -v pip >/dev/null 2>&1 && pip install --user uv >/dev/null 2>&1; then
+                    export PATH="$HOME/.local/bin:$PATH"
                 fi
-            else
-                print_error "Failed to install uv"
-                has_issues=true
             fi
-        else
-            has_issues=true
         fi
-    else
-        print_status "uvx found at: $(command -v uvx)"
+        if ! command -v uvx >/dev/null 2>&1; then
+            print_error "uvx is required but not installed."
+            print_info "Install with: pipx install uv   or   pip install --user uv"
+            print_info "Then re-run setup (or use the one-click installer which embeds uvx)."
+            exit 1
+        fi
     fi
+    print_status "uvx found at: $(command -v uvx)"
 
     # Check Claude CLI (optional)
     if command -v claude >/dev/null 2>&1; then
@@ -974,7 +1037,7 @@ check_prerequisites() {
     fi
 
     if [[ "$has_issues" == "true" ]]; then
-        print_error "Missing required dependencies"
+        print_error "Missing required dependencies (jq is mandatory)."
         exit 1
     fi
 }
@@ -1052,10 +1115,35 @@ create_directory_structure() {
     print_status "Directory structure ready"
 }
 
+# Choose the best available MCP runner (optional fallback logic)
+choose_mcp_runner() {
+    if command -v uvx >/dev/null 2>&1; then
+        MCP_CMD="uvx"
+        MCP_ARGS_BASE=("-qq" "chroma-mcp")
+        return 0
+    elif command -v chroma-mcp >/dev/null 2>&1; then
+        MCP_CMD="chroma-mcp"
+        MCP_ARGS_BASE=()
+        return 0
+    elif command -v python3 >/dev/null 2>&1 && python3 -c "import chroma_mcp" 2>/dev/null; then
+        MCP_CMD="python3"
+        MCP_ARGS_BASE=("-m" "chroma_mcp")
+        return 0
+    fi
+    return 1
+}
+
 create_mcp_config() {
     print_info "Configuring MCP server..."
 
-    local uvx_cmd="uvx"  # Use command name, not full path
+    # Choose the best available runner for Chroma MCP
+    if ! choose_mcp_runner; then
+        print_error "No viable runner for Chroma MCP (need uvx, chroma-mcp, or python3 -m chroma_mcp)."
+        print_info "Install with: pipx install uv   or   pip install chroma-mcp"
+        exit 1
+    fi
+
+    print_status "Using MCP runner: $MCP_CMD"
     local data_dir_rel="${DATA_DIR_OVERRIDE:-.chroma}"
     local project_dir_abs
     project_dir_abs="$(pwd)"
@@ -1069,9 +1157,7 @@ create_mcp_config() {
     # Resolve to an absolute path within the project root
     # We prefer an absolute path in .mcp.json to avoid CWD fragility.
     local data_dir_abs="$project_dir_abs/$data_dir_rel"
-    if command -v realpath >/dev/null 2>&1; then
-        data_dir_abs="$(realpath -m "$data_dir_abs")"
-    fi
+    data_dir_abs="$(require_realpath "$data_dir_abs")"
 
     # Ensure the resolved absolute dir is still inside the project
     if [[ "$DRY_RUN" != "1" ]]; then
@@ -1102,7 +1188,7 @@ create_mcp_config() {
             backup_if_exists ".mcp.json"
 
             local merged_config
-            merged_config=$(json_merge_mcp_config ".mcp.json" "$uvx_cmd" "$data_dir_abs")
+            merged_config=$(json_merge_mcp_config ".mcp.json" "$MCP_CMD" "$data_dir_abs" "${MCP_ARGS_BASE[@]}")
 
             write_file_safe ".mcp.json" "$merged_config"
             chmod 600 .mcp.json 2>/dev/null || true
@@ -1114,7 +1200,7 @@ create_mcp_config() {
 
     if [[ "$SKIP_MCP" != "true" ]]; then
         local mcp_config
-        mcp_config=$(json_emit_mcp_config "$uvx_cmd" "$data_dir_abs")
+        mcp_config=$(json_emit_mcp_config "$MCP_CMD" "$data_dir_abs" "${MCP_ARGS_BASE[@]}")
 
         write_file_safe ".mcp.json" "$mcp_config"
         chmod 600 .mcp.json 2>/dev/null || true
@@ -1137,9 +1223,9 @@ create_claude_md() {
         backup_claude_md
     fi
 
-    # Ensure template exists or seed a minimal one
-    if [[ ! -f "templates/CLAUDE.md.tpl" ]]; then
-        print_warning "templates/CLAUDE.md.tpl not found. Seeding minimal template..."
+    # Ensure template exists and is non-empty, or seed a minimal one
+    if [[ ! -f "templates/CLAUDE.md.tpl" ]] || [[ ! -s "templates/CLAUDE.md.tpl" ]]; then
+        print_warning "templates/CLAUDE.md.tpl missing or empty. Seeding minimal template..."
         if [[ "$DRY_RUN" != "1" ]]; then
             cat > templates/CLAUDE.md.tpl <<'TPL'
 # CLAUDE.md — Project Contract
@@ -1155,13 +1241,53 @@ TPL
         fi
     fi
 
-    require_cmd envsubst "Install gettext:
-  macOS: brew install gettext && brew link --force gettext
-  Linux: apt-get install gettext"
+    # Prefer envsubst if present; otherwise fall back to a minimal awk renderer
     if [[ "$DRY_RUN" == "1" ]]; then
         print_info "[dry-run] Would render CLAUDE.md from templates/CLAUDE.md.tpl using PROJECT_COLLECTION=${PROJECT_COLLECTION}"
     else
-        CONTENT="$(env PROJECT_COLLECTION="$PROJECT_COLLECTION" envsubst < templates/CLAUDE.md.tpl)"
+        if command -v envsubst >/dev/null 2>&1; then
+            CONTENT="$(PROJECT_COLLECTION="$PROJECT_COLLECTION" envsubst < templates/CLAUDE.md.tpl)"
+        else
+            # Minimal variable expansion for ${PROJECT_COLLECTION}
+            CONTENT="$(awk -v v="$PROJECT_COLLECTION" '{gsub(/\${PROJECT_COLLECTION}/, v)}1' templates/CLAUDE.md.tpl)"
+        fi
+
+        # Validate content before writing
+        # Check for whitespace-only content FIRST (before size check)
+        if [[ "$CONTENT" =~ ^[[:space:]]*$ ]]; then
+            print_error "Template expansion produced whitespace-only content"
+            print_info "Template file: templates/CLAUDE.md.tpl"
+            print_info "This indicates template is empty or contains only whitespace"
+            exit 1
+        fi
+
+        # Then check for empty or too-short content
+        if [[ -z "$CONTENT" ]] || [[ "${#CONTENT}" -lt 10 ]]; then
+            print_error "Template expansion failed - CONTENT is empty or too short"
+            print_info "Template file: templates/CLAUDE.md.tpl"
+            print_info "PROJECT_COLLECTION: $PROJECT_COLLECTION"
+            print_info "Content length: ${#CONTENT} bytes"
+            exit 1
+        fi
+
+        # Check for unresolved placeholders
+        # NOTE: This check has a known limitation with envsubst:
+        #   - envsubst removes undefined variables entirely (replaces with empty string)
+        #   - Placeholder typos like ${PROJECT_COLLCETION_TYPO} become blank, not literal
+        #   - This means typos in variable names cannot be detected by this check
+        #   - Mitigation: Template is version-controlled and manually tested
+        if [[ "$CONTENT" =~ \$\{[A-Z_][A-Z0-9_]*\} ]]; then
+            print_error "Template contains unresolved placeholders"
+            print_info "Template file: templates/CLAUDE.md.tpl"
+            print_info "Found unresolved variable(s) like \${VARIABLE_NAME}"
+            print_info "This means template expansion failed or template has typos"
+            # Show which placeholders weren't resolved
+            local unresolved
+            unresolved=$(echo "$CONTENT" | grep -oE '\$\{[A-Z_][A-Z0-9_]*\}' | sort -u | head -5)
+            print_info "Unresolved placeholders: $unresolved"
+            exit 1
+        fi
+
         write_file_safe "CLAUDE.md" "$CONTENT"
     fi
     print_status "Created CLAUDE.md from template"
@@ -1635,9 +1761,7 @@ print_summary() {
         echo ""
         print_info "Next steps:"
         echo "  1. cd \"$PROJECT_DIR\""
-        echo "  2. Run ONE of these commands:"
-        echo "     $ claude           (starts Claude with ChromaDB)"
-        echo "     $ ./start-claude-chroma.sh"
+        echo "  2. Run: claude"
         echo "  3. Claude auto-initializes ChromaDB"
 
         echo ""
@@ -1653,18 +1777,23 @@ print_summary() {
 # PROJECT REGISTRY
 # ============================================================================
 add_to_registry() {
-    # Use XDG config home if available
-    local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
-    local registry="$config_dir/claude/chroma_projects.jsonl"
-    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    # Use bin/registry.sh for atomic registry operations
+    if [[ -x "bin/registry.sh" ]]; then
+        bin/registry.sh add "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" || true
+    else
+        # Fallback to direct write if registry script not available
+        local config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+        local registry="$config_dir/claude/chroma_projects.jsonl"
+        local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Create registry directory if needed
-    mkdir -p "$(dirname "$registry")"
+        # Create registry directory if needed
+        mkdir -p "$(dirname "$registry")"
 
-    # Add entry if not already present (JSONL format)
-    if ! grep -Fq "\"path\":\"$PROJECT_DIR\"" "$registry" 2>/dev/null; then
-        printf '{"name":"%s","path":"%s","collection":"%s","data_dir":"%s/.chroma","created_at":"%s","sessions":0}\n' \
-            "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" "$PROJECT_DIR" "$timestamp" >> "$registry"
+        # Add entry if not already present (JSONL format)
+        if ! grep -Fq "\"path\":\"$PROJECT_DIR\"" "$registry" 2>/dev/null; then
+            printf '{"name":"%s","path":"%s","collection":"%s","data_dir":"%s/.chroma","created_at":"%s","sessions":0}\n' \
+                "$PROJECT_NAME" "$PROJECT_DIR" "$PROJECT_COLLECTION" "$PROJECT_DIR" "$timestamp" >> "$registry"
+        fi
     fi
 }
 
@@ -1812,7 +1941,6 @@ main() {
     ensure_settings_memory_discipline
     create_gitignore
     create_init_docs
-    create_launcher
     # Shell function is OFF by default; only in --full mode
     if [[ "$FULL" == "1" ]]; then
         setup_shell_function
@@ -1823,5 +1951,7 @@ main() {
     print_summary
 }
 
-# Run main function
-main "$@"
+# Run main function only if script is executed, not sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

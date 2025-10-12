@@ -1,10 +1,9 @@
-# CLAUDE.md — Project Contract for ChromaDB
+# CLAUDE.md — Project Contract
 
-**Purpose**: Manage project memory using ChromaDB for persistent knowledge across sessions.
+**Purpose**: Follow this in every session for this repo. Keep memory sharp. Keep outputs concrete. Cut rework.
 
 ## 🧠 Project Memory (Chroma)
-
-Use server `chroma`. Collection `project_memory`.
+Use server `chroma`. Collection `chromadb_memory`.
 
 Log after any confirmed fix, decision, gotcha, or preference.
 
@@ -13,53 +12,43 @@ Log after any confirmed fix, decision, gotcha, or preference.
 - **metadatas**: `{ "type":"decision|fix|tip|preference", "tags":"comma,separated", "source":"file|PR|spec|issue" }`
 - **ids**: stable string if updating the same fact.
 
-Always reply after writes: **Logged memory: <id>**.
-
-Before proposing work, query Chroma for prior facts.
-
 ### Chroma Calls
 ```javascript
 // Create once:
-mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
+mcp__chroma__chroma_create_collection { "collection_name": "chromadb_memory" }
 
 // Add:
 mcp__chroma__chroma_add_documents {
-  "collection_name": "project_memory",
+  "collection_name": "chromadb_memory",
   "documents": ["<text>"],
   "metadatas": [{"type":"<type>","tags":"a,b,c","source":"<src>"}],
   "ids": ["<stable-id>"]
 }
 
-// Query:
+// Query (start with 5; escalate only if <3 strong hits):
 mcp__chroma__chroma_query_documents {
-  "collection_name": "project_memory",
+  "collection_name": "chromadb_memory",
   "query_texts": ["<query>"],
   "n_results": 5
 }
 ```
 
-### Memory Examples
-```javascript
-documents: ["Fixed claude-chroma by using .mcp.json for server loading"]
-metadatas: [{ "type":"fix","tags":"mcp,config,chroma","source":"claude-chroma.sh" }]
-ids: ["fix-mcp-loading"]
+## 🔍 Retrieval Checklist Before Coding
+1. Query Chroma for related memories.
+2. Check repo files that match the task.
+3. List open PRs or issues that touch the same area.
+4. Only then propose changes.
 
-documents: ["Use both .mcp.json (server) and CLAUDE.md (instructions)"]
-metadatas: [{ "type":"decision","tags":"config,architecture","source":"troubleshooting" }]
-ids: ["dual-config-approach"]
-```
+## ⚡ Activation
+Read this file at session start.
+Then read `.chroma/context/*.md` (titles + first bullets) and list which ones you used.
+Run `bin/chroma-stats.py` and announce: **Contract loaded. Using Chroma chromadb_memory. Found [N] memories (by type ...).**
 
-## 📋 Session Lifecycle
+## 🧹 Session Hygiene
+Prune to last 20 turns if context gets heavy. Save long outputs in `./backups/` and echo paths.
 
-- **Start**: Query Chroma for context relevant to the task
-- **Work**: Log decisions and fixes as they happen
-- **Checkpoint**: Every major milestone, log a memory
-- **End**: Summarize key memories written
+## 📁 Output Policy
+For code, return unified diff or patchable files. For scripts, include exact commands and paths.
 
-## 🚀 Activation
-
-Read this file at chat start.
-
-Acknowledge: **Contract loaded. Using Chroma project_memory.**
-
-If Chroma MCP is missing, state "Chroma MCP server not available" and continue.
+## 🛡️ Safety
+No secrets in `.chroma` or transcripts. Respect rate limits. Propose batching if needed.
