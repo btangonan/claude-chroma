@@ -1,0 +1,19 @@
+# ChromaDB data (example - don't commit user data)
+.chroma/
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Development
+*.swp
+.vscode/
+.idea/
+
+# Backups
+*.backup.*
+*.original
+
+# Logs
+*.log

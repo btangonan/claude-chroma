@@ -1,0 +1,52 @@
+{
+  "name": "claude-chroma",
+  "version": "1.0.0",
+  "description": "ChromaDB MCP server management plugin with path validation, migration utilities, and best practices enforcement for persistent AI memory",
+  "author": "Bradley Tangonan",
+  "license": "MIT",
+  "homepage": "https://github.com/bradleytangonan/claude-chroma",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bradleytangonan/claude-chroma"
+  },
+  "keywords": [
+    "chromadb",
+    "mcp",
+    "memory",
+    "persistence",
+    "vector-database",
+    "path-management"
+  ],
+  "claude-code-version": ">=1.0.0",
+  "commands": [
+    {
+      "name": "setup",
+      "description": "Set up ChromaDB MCP server for the current project",
+      "file": "commands/setup.md"
+    },
+    {
+      "name": "validate",
+      "description": "Validate ChromaDB paths and configuration",
+      "file": "commands/validate.md"
+    },
+    {
+      "name": "migrate",
+      "description": "Migrate ChromaDB data from external volumes to local storage",
+      "file": "commands/migrate.md"
+    },
+    {
+      "name": "stats",
+      "description": "Show ChromaDB statistics and collection info",
+      "file": "commands/stats.md"
+    }
+  ],
+  "hooks": {
+    "enabled": true,
+    "file": "hooks/hooks.json"
+  },
+  "configuration": {
+    "defaultDataDir": ".chroma",
+    "fallbackDataDir": ".claude/chroma",
+    "validateOnStartup": true
+  }
+}
