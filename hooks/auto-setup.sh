@@ -243,6 +243,9 @@ CLAUDEMD
     if [ ! -f "${PROJECT_ROOT}/.claude/settings.local.json" ]; then
         cat > "${PROJECT_ROOT}/.claude/settings.local.json" << 'SETTINGS'
 {
+  "enabledMcpjsonServers": [
+    "chroma"
+  ],
   "mcpServers": {
     "chroma": {
       "alwaysAllow": [
@@ -276,7 +279,9 @@ SETTINGS
     echo "📝 CLAUDE.md instructs Claude to use ChromaDB for project memory."
     echo "   Collection: project_memory"
     echo ""
-    echo "You can now use /chroma:validate, /chroma:migrate, and /chroma:stats commands."
+    echo "⚠️  IMPORTANT: Restart Claude Code to activate the ChromaDB MCP server."
+    echo ""
+    echo "After restart, you can use /chroma:validate, /chroma:migrate, and /chroma:stats commands."
 }
 
 # Main logic
