@@ -11,6 +11,26 @@ CHROMA_DIR="${PROJECT_ROOT}/.chroma"
 MCP_CONFIG="${PROJECT_ROOT}/.mcp.json"
 
 # ==============================================================================
+# Python Requirement Check
+# ==============================================================================
+
+if ! command -v python3 &>/dev/null; then
+    echo ""
+    echo "❌ Error: Python 3 is required for Claude Chroma plugin"
+    echo ""
+    echo "This plugin uses Python for reliable JSON configuration merging."
+    echo ""
+    echo "📦 Install Python 3:"
+    echo "  • macOS: brew install python3"
+    echo "  • Ubuntu/Debian: sudo apt install python3"
+    echo "  • Windows: https://www.python.org/downloads/"
+    echo ""
+    echo "After installing Python, restart Claude Code."
+    echo ""
+    exit 1
+fi
+
+# ==============================================================================
 # Detection Functions
 # ==============================================================================
 

@@ -11,6 +11,22 @@ Claude Chroma helps you set up and manage ChromaDB MCP servers in your Claude Co
 - 📊 **Statistics Dashboard**: Monitor collections, document counts, and storage usage
 - 🛡️ **Pre-Tool Hooks**: Automatic path validation before ChromaDB operations
 
+## Requirements
+
+**Python 3 is required** for this plugin to function correctly.
+
+The plugin uses Python for reliable JSON configuration merging and path management. This ensures:
+- ✅ Safe merging of `.mcp.json` and `settings.local.json` without data loss
+- ✅ Accurate path updates when projects are moved
+- ✅ Reliable configuration validation
+
+**Installation:**
+- **macOS**: Python 3 is pre-installed on recent versions
+- **Linux**: `sudo apt install python3` (Ubuntu/Debian) or equivalent
+- **Windows**: Download from [python.org/downloads](https://www.python.org/downloads/)
+
+If Python is not available, the plugin will display a clear error message with installation instructions.
+
 ## Installation
 
 **One command. That's it.**
@@ -279,6 +295,36 @@ Run `/chroma:validate` periodically, especially:
 - Before important work sessions
 
 ## Troubleshooting
+
+### Python 3 Not Found
+
+**Symptom:** "Python 3 is required for Claude Chroma plugin" error on startup
+
+**Cause:** Python 3 is not installed or not in system PATH
+
+**Solution:**
+```bash
+# macOS
+brew install python3
+
+# Ubuntu/Debian
+sudo apt install python3
+
+# Windows
+# Download from https://www.python.org/downloads/
+# Make sure to check "Add Python to PATH" during installation
+
+# Verify installation
+python3 --version
+```
+
+After installing Python, restart Claude Code.
+
+**Alternative:** If you cannot install Python, you can manually configure ChromaDB:
+1. Create `.chroma/` directory in your project root
+2. Copy `.mcp.json` template from plugin repository
+3. Update the `--data-dir` path to match your project location
+4. Manually add ChromaDB configuration to `.claude/settings.local.json`
 
 ### MCP Connection Failed
 
