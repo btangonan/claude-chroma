@@ -1,23 +1,46 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# macOS
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
+
+# Windows
 ehthumbs.db
 Thumbs.db
 
-# Project specific
-*.log
+# Project-specific ChromaDB data
 .chroma/
+*.chroma
+*.log
+
+# Claude Code local artifacts
+.claude/
+.mcp.json
+
+# Temporary and backup files
 temp/
 backup/
-*.chroma
+*.backup.*
+*~
 
-# Generated configuration (contains machine-specific paths)
-.mcp.json
-.mcp.json.backup.*
+# Archive (installer files - separate repo)
+archive/
 
-# Claude Code artifacts
-.claude/
+# Examples and test data
+examples/.mcp.json
+
+# Development
+.venv/
+venv/
+env/
+*.swp
+*.swo

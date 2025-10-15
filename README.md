@@ -1,126 +1,373 @@
-# Claude-Chroma
+# Claude Chroma Plugin
 
-A streamlined setup script for ChromaDB Model Context Protocol (MCP) server integration with Claude.
+**ChromaDB MCP server management plugin with path validation, migration utilities, and best practices enforcement for persistent AI memory.**
 
-## Purpose
+## Overview
 
-Claude-Chroma enables **persistent memory** for Claude Desktop projects. Instead of starting fresh every session, Claude can remember your project decisions, fixes, and preferences across conversations. This creates continuity that dramatically improves development workflows by maintaining context about your codebase, architecture choices, and project history.
+Claude Chroma helps you set up and manage ChromaDB MCP servers in your Claude Code projects with:
+- ✅ **Automated Setup**: Quick ChromaDB MCP configuration for any project
+- 🔍 **Path Validation**: Detect and prevent path issues from external volumes
+- 🚚 **Data Migration**: Safely move ChromaDB data from external drives to local storage
+- 📊 **Statistics Dashboard**: Monitor collections, document counts, and storage usage
+- 🛡️ **Pre-Tool Hooks**: Automatic path validation before ChromaDB operations
 
-📖 **New to Claude-Chroma?** Check out our [Quick Start Guide](QUICKSTART.md) for the fastest setup!
+## Installation
+
+**One command. That's it.**
+
+```bash
+/plugin marketplace add btangonan/claude-chroma-marketplace
+/plugin install claude-chroma@claude-chroma-marketplace
+```
+
+**Done!** ChromaDB is automatically configured when you start Claude Code.
+
+The plugin automatically:
+- ✅ Creates `.chroma/` directory in your project root
+- ✅ Configures `.mcp.json` with ChromaDB MCP server
+- ✅ Sets up optimal configuration for persistent memory
+
+**No manual setup required.** Just install and start using the commands below.
 
 ## Quick Start
 
-### 🚀 One-Click Installation (Easiest!)
+### View Statistics
 
-**macOS Users:** Simply double-click the installer:
-1. Download `setup-claude-chroma-oneclick-fixed.command`
-2. Double-click to run
-3. Enter your project name when prompted
-4. Done! Use the created `launch-claude-here.command` to start Claude with memory
-
-### Command Line Installation
-
-Run the setup script from any directory:
+See your collections and storage usage:
 
 ```bash
-# Basic setup (interactive mode)
-./claude-chroma.sh
-
-# With project name
-./claude-chroma.sh "my_project"
-
-# Non-interactive mode (auto-yes)
-CHROMA_SETUP_YES=1 ./claude-chroma.sh
-
-# Auto-install shell function
-CHROMA_SETUP_ADD_SHELL_FN=1 ./claude-chroma.sh
+/chroma:stats
 ```
 
-## Features
+### Validate Configuration
 
-- Automated ChromaDB MCP server setup
-- Claude settings.json configuration
-- Shell function for easy access
-- Project memory initialization
-- Comprehensive error handling
-
-## Files
-
-- `claude-chroma.sh` - Main setup script (self-contained with embedded templates)
-- `example_usage.md` - Usage examples and documentation
-- `troubleshooting.md` - Common issues and solutions
-- `FUTURE_IMPROVEMENTS.md` - Roadmap and enhancement ideas
-- `IMPROVEMENTS.md` - Completed improvements
-
-## Requirements
-
-- macOS or Linux
-- Claude Desktop app
-- **uvx** (Python package runner) - Required to run the ChromaDB MCP server
-
-### Installing uvx
-
-**Option 1: One-Click Installer (Recommended for macOS)**
-- The `setup-claude-chroma-oneclick-fixed.command` installer includes embedded uvx
-- No manual installation needed - it's fully self-contained!
-
-**Option 2: Manual Installation**
-```bash
-# Install via pipx (recommended)
-pipx install uv
-
-# Or via pip
-pip install --user uv
-
-# Or via the official installer
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**Important**: Without uvx, the ChromaDB MCP server cannot run and Claude will not have persistent memory. The setup script will verify uvx is installed and fail with clear instructions if it's missing.
-
-**Note**: Python is auto-downloaded by uvx when required - you don't need to install Python separately.
-
-**Network Filesystems**: If your project is on NFS, SMB, or similar network storage, file locking behavior may vary. The registry uses cross-platform locks for safety but network filesystems may introduce occasional delays in lock acquisition.
-
-## Usage After Setup
-
-Once setup is complete, you have several ways to start Claude with ChromaDB:
-
-### Using the Shell Function (Recommended)
-
-If you enabled the shell function during setup:
+Check if your ChromaDB paths and configuration are healthy:
 
 ```bash
-# Start Claude with ChromaDB in current directory
-claude-chroma
-
-# Start with additional Claude arguments
-claude-chroma --help
-claude-chroma --model sonnet
+/chroma:validate
 ```
 
-### Direct Command
+### Migrate from External Volumes
+
+Move ChromaDB data from external drives to local storage:
 
 ```bash
-# Start Claude with ChromaDB configuration
-claude --mcp-config .claude/settings.local.json
-
-# With additional Claude arguments
-claude --mcp-config .claude/settings.local.json --model sonnet
+/chroma:migrate
 ```
 
-### Using the Start Script
+## Commands
+
+### `/chroma:setup`
+**Set up ChromaDB MCP server for the current project**
+
+Automatically configures ChromaDB MCP integration with:
+- Project-local `.chroma/` data directory
+- Optimized MCP server settings
+- Connection validation
+
+**Usage:**
+```bash
+/chroma:setup
+```
+
+---
+
+### `/chroma:validate`
+**Validate ChromaDB paths and configuration**
+
+Performs comprehensive validation:
+- ✅ Checks if `.mcp.json` exists and is valid
+- ✅ Verifies data directory path is accessible
+- ⚠️ Warns about external volume risks
+- ✅ Tests MCP connection
+- ✅ Provides actionable recommendations
+
+**Usage:**
+```bash
+/chroma:validate
+```
+
+**Output Example:**
+```
+## ChromaDB Validation Report
+
+**MCP Config**: ✅ Found at .mcp.json
+**Data Directory**: /Users/you/project/.chroma
+**Path Status**: ✅ Local
+**Permissions**: ✅ Read/Write
+**Connection Test**: ✅ Connected
+**Collections Found**: 2 (project_memory, chromadb_memory)
+
+### Recommendations
+✅ Configuration is healthy
+```
+
+---
+
+### `/chroma:migrate`
+**Migrate ChromaDB data from external volumes to local storage**
+
+Safely migrates your ChromaDB data from external drives (like `/Volumes/*`) to project-local storage to prevent path breakage.
+
+**Usage:**
+```bash
+/chroma:migrate
+```
+
+**What it does:**
+1. Backs up current `.mcp.json`
+2. Copies all data from external volume to local `.chroma/`
+3. Updates MCP configuration to use local path
+4. Verifies all collections migrated successfully
+5. Provides cleanup options
+
+**Safety Features:**
+- Never deletes source data automatically
+- Creates configuration backups
+- Validates migration success before any cleanup
+- Uses `rsync` for resumable, safe copies
+
+---
+
+### `/chroma:stats`
+**Show ChromaDB statistics and collection info**
+
+Displays comprehensive statistics about your ChromaDB instance:
+- 📊 Collection counts and document totals
+- 💾 Storage usage and file breakdown
+- 🏥 Health indicators and path status
+- 📈 Per-collection metrics
+
+**Usage:**
+```bash
+/chroma:stats
+```
+
+**Output Example:**
+```
+## ChromaDB Statistics Report
+
+**Data Directory**: /Users/you/project/.chroma
+**Path Type**: ✅ Local
+**Database Size**: 1.2 MB
+**Total Collections**: 2
+
+### Collections
+
+1. **project_memory**
+   - Documents: 120
+   - Metadata: {type, tags, source}
+   - Last Modified: 2025-10-14 13:39
+   - Size: ~800 KB
+
+2. **chromadb_memory**
+   - Documents: 45
+   - Metadata: {type, tags, source}
+   - Last Modified: 2025-10-13 10:22
+   - Size: ~400 KB
+```
+
+## How It Works
+
+### Path Management Strategy
+
+**Recommended:** Project-local `.chroma/` directory
+- ✅ Survives project moves
+- ✅ No external dependencies
+- ✅ Fast access
+- ✅ Easy to backup
+
+**Not Recommended:** External volumes (`/Volumes/*`)
+- ❌ Breaks when volume unmounts
+- ❌ Slower access
+- ❌ Path dependencies
+
+### Pre-Tool Validation Hook
+
+The plugin includes a Python hook that runs before every ChromaDB MCP operation to:
+1. Check if data directory exists
+2. Verify read/write permissions
+3. Warn about external volume paths
+4. Block operations if path is invalid
+
+This prevents cryptic MCP errors and provides clear guidance.
+
+### Migration Process
+
+When you run `/chroma:migrate`, the plugin:
+1. Identifies source (current path) and target (`.chroma/`)
+2. Validates source has valid ChromaDB data
+3. Backs up `.mcp.json` configuration
+4. Uses `rsync` to safely copy all data
+5. Updates `.mcp.json` to point to new path
+6. Tests connection and verifies collections
+7. Provides cleanup recommendations
+
+## Best Practices
+
+### 1. Use Project-Local Paths
+Always store ChromaDB data in your project root (`.chroma/`), not on external volumes.
+
+### 2. Add to .gitignore
+Your `.chroma/` directory should NOT be committed to git:
+
+```gitignore
+# ChromaDB data
+.chroma/
+*.sqlite3
+```
+
+### 3. Regular Backups
+Backup your `.chroma/` directory if you need persistence across machines:
 
 ```bash
-# Use the generated start script
-./start-claude-chroma.sh
+# Backup
+tar -czf chroma-backup-$(date +%Y%m%d).tar.gz .chroma/
 
-# With arguments
-./start-claude-chroma.sh --model sonnet
+# Restore
+tar -xzf chroma-backup-20251014.tar.gz
 ```
 
-**Note**: The shell function and start script will automatically detect if you're in a directory with ChromaDB configuration and use it.
+### 4. Collection Naming
+Use descriptive, project-specific collection names:
+- ✅ `project_name_memory`
+- ✅ `feature_context`
+- ❌ `memory` (too generic)
+- ❌ `collection1` (not descriptive)
 
-## Repository
+### 5. Regular Validation
+Run `/chroma:validate` periodically, especially:
+- After moving projects
+- After system updates
+- When MCP connection fails
+- Before important work sessions
 
-https://github.com/btangonan/claude-chroma
+## Troubleshooting
+
+### MCP Connection Failed
+
+**Symptom:** ChromaDB MCP operations fail or timeout
+
+**Solution:**
+```bash
+# 1. Validate configuration
+/chroma:validate
+
+# 2. Check MCP server status
+/mcp
+
+# 3. Restart Claude Code if needed
+```
+
+### Path Not Found
+
+**Symptom:** "ChromaDB path does not exist" error
+
+**Solution:**
+```bash
+# Run setup to create proper structure
+/chroma:setup
+```
+
+### External Volume Warning
+
+**Symptom:** "ChromaDB is on external volume" warning
+
+**Solution:**
+```bash
+# Migrate to local storage
+/chroma:migrate
+```
+
+### Permission Denied
+
+**Symptom:** "ChromaDB path is not accessible" error
+
+**Solution:**
+```bash
+# Check permissions
+ls -la .chroma/
+
+# Fix permissions if needed
+chmod 755 .chroma/
+chmod 644 .chroma/chroma.sqlite3
+```
+
+## Technical Details
+
+### Plugin Structure
+
+```
+claude-chroma/
+├── .claude-plugin/
+│   └── plugin.json          # Plugin metadata
+├── commands/
+│   ├── setup.md            # /chroma:setup command
+│   ├── validate.md         # /chroma:validate command
+│   ├── migrate.md          # /chroma:migrate command
+│   └── stats.md            # /chroma:stats command
+├── hooks/
+│   ├── hooks.json          # Hook configuration
+│   └── validate-chroma-path.py  # Pre-tool validation hook
+└── README.md
+```
+
+### MCP Configuration Format
+
+The plugin creates/updates `.mcp.json` with this structure:
+
+```json
+{
+  "mcpServers": {
+    "chroma": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "-qq",
+        "chroma-mcp",
+        "--client-type",
+        "persistent",
+        "--data-dir",
+        "/absolute/path/to/project/.chroma"
+      ],
+      "env": {
+        "ANONYMIZED_TELEMETRY": "FALSE",
+        "PYTHONUNBUFFERED": "1",
+        "TOKENIZERS_PARALLELISM": "False",
+        "CHROMA_SERVER_KEEP_ALIVE": "0",
+        "CHROMA_CLIENT_TIMEOUT": "0"
+      },
+      "initializationOptions": {
+        "timeout": 0,
+        "keepAlive": true,
+        "retryAttempts": 5
+      }
+    }
+  }
+}
+```
+
+## Contributing
+
+Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Support
+
+- 🐛 **Issues**: [GitHub Issues](https://github.com/bradleytangonan/claude-chroma/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/bradleytangonan/claude-chroma/discussions)
+- 📖 **Documentation**: [Wiki](https://github.com/bradleytangonan/claude-chroma/wiki)
+
+## Acknowledgments
+
+Built with:
+- [ChromaDB](https://www.trychroma.com/) - Vector database for AI embeddings
+- [Claude Code](https://claude.com/claude-code) - Agentic terminal tool
+- [MCP](https://modelcontextprotocol.io/) - Model Context Protocol
+
+---
+
+**Made with ❤️ for the Claude Code community**
