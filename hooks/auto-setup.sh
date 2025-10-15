@@ -61,6 +61,93 @@ is_chromadb_configured() {
 }
 
 # ==============================================================================
+# Path Update Detection (for when user moves project folder)
+# ==============================================================================
+
+needs_path_update() {
+    # Only check if .mcp.json exists
+    [ ! -f "$MCP_CONFIG" ] && return 1
+
+    # Extract current data-dir path from .mcp.json
+    local current_path=$(python3 -c "
+import json
+import sys
+try:
+    with open('$MCP_CONFIG', 'r') as f:
+        config = json.load(f)
+    chroma = config.get('mcpServers', {}).get('chroma', {})
+    args = chroma.get('args', [])
+    for i, arg in enumerate(args):
+        if arg == '--data-dir' and i+1 < len(args):
+            print(args[i+1])
+            sys.exit(0)
+except:
+    pass
+" 2>/dev/null)
+
+    # Check if path exists and matches current expected path
+    if [ -n "$current_path" ] && [ "$current_path" != "$CHROMA_DIR" ]; then
+        # Only update if path was project-relative (ends with /.chroma)
+        if [[ "$current_path" == *"/.chroma" ]]; then
+            return 0  # Path mismatch detected, needs update
+        fi
+    fi
+
+    return 1  # No update needed
+}
+
+update_mcp_path() {
+    # Extract old path for display
+    local old_path=$(python3 -c "
+import json
+import sys
+try:
+    with open('$MCP_CONFIG', 'r') as f:
+        config = json.load(f)
+    chroma = config.get('mcpServers', {}).get('chroma', {})
+    args = chroma.get('args', [])
+    for i, arg in enumerate(args):
+        if arg == '--data-dir' and i+1 < len(args):
+            print(args[i+1])
+            sys.exit(0)
+except:
+    pass
+" 2>/dev/null)
+
+    echo "📍 Project path change detected:"
+    echo "   Old: $old_path"
+    echo "   New: $CHROMA_DIR"
+
+    # Create backup
+    local backup_path="${MCP_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$MCP_CONFIG" "$backup_path"
+    echo "   📦 Backup created: $(basename "$backup_path")"
+
+    # Update path using Python
+    python3 -c "
+import json
+with open('$MCP_CONFIG', 'r') as f:
+    config = json.load(f)
+
+# Update data-dir argument
+if 'mcpServers' in config and 'chroma' in config['mcpServers']:
+    args = config['mcpServers']['chroma'].get('args', [])
+    for i, arg in enumerate(args):
+        if arg == '--data-dir' and i+1 < len(args):
+            args[i+1] = '$CHROMA_DIR'
+            break
+    config['mcpServers']['chroma']['args'] = args
+
+with open('$MCP_CONFIG', 'w') as f:
+    json.dump(config, f, indent=2)
+" 2>/dev/null
+
+    echo "   ✅ Updated .mcp.json with new path"
+    echo "   ⚠️  IMPORTANT: Restart Claude Code to apply changes"
+    echo ""
+}
+
+# ==============================================================================
 # .mcp.json Setup (existing logic - already works well)
 # ==============================================================================
 
@@ -492,6 +579,12 @@ SETTINGS_TEMPLATE
 
 # Track if anything was modified
 MODIFIED=false
+
+# 0. Check for path update needed (project was moved)
+if needs_path_update; then
+    update_mcp_path
+    MODIFIED=true
+fi
 
 # 1. Check and setup .chroma directory if needed
 if [ ! -d "$CHROMA_DIR" ]; then
