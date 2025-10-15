@@ -31,6 +31,7 @@ The plugin automatically:
 - ✅ Creates or merges `CLAUDE.md` with ChromaDB instructions
 - ✅ **Non-destructive merge**: Preserves existing project files with automatic backups
 - ✅ **Idempotent**: Safe to run multiple times without duplication
+- ✅ **Project portability**: Auto-updates paths when you move project folders
 
 **No manual setup required.** Just install and start using the commands below.
 
@@ -41,8 +42,28 @@ The plugin intelligently handles all project states:
 - ✅ **Existing CLAUDE.md**: Appends ChromaDB section (preserves your content)
 - ✅ **Existing settings.local.json**: Merges ChromaDB config (preserves existing servers)
 - ✅ **Already configured**: Silent exit, no modifications
+- ✅ **Moved projects**: Auto-detects and updates paths when you move folders
 
 **Automatic backups created before any modifications** (timestamped `.backup` files)
+
+### Project Portability
+
+**Move projects freely** - the plugin automatically detects and fixes path changes:
+
+```bash
+# Move your project
+mv ~/Desktop/myproject ~/Documents/myproject
+
+# Open in Claude Code - paths auto-update!
+cd ~/Documents/myproject
+claude  # SessionStart hook detects change and updates .mcp.json
+```
+
+The plugin:
+- Detects when project folder path has changed
+- Updates `.mcp.json` to point to new location
+- Creates backup before modification
+- Respects custom paths (only updates project-relative paths)
 
 ## Quick Start
 
