@@ -20,14 +20,29 @@ Claude Chroma helps you set up and manage ChromaDB MCP servers in your Claude Co
 /plugin install claude-chroma@claude-chroma-marketplace
 ```
 
+**Repository:** [https://github.com/btangonan/claude-chroma](https://github.com/btangonan/claude-chroma)
+
 **Done!** ChromaDB is automatically configured when you start Claude Code.
 
 The plugin automatically:
 - ✅ Creates `.chroma/` directory in your project root
 - ✅ Configures `.mcp.json` with ChromaDB MCP server
-- ✅ Sets up optimal configuration for persistent memory
+- ✅ Adds `enabledMcpjsonServers` to `.claude/settings.local.json` (activates MCP)
+- ✅ Creates or merges `CLAUDE.md` with ChromaDB instructions
+- ✅ **Non-destructive merge**: Preserves existing project files with automatic backups
+- ✅ **Idempotent**: Safe to run multiple times without duplication
 
 **No manual setup required.** Just install and start using the commands below.
+
+### Works with Existing Projects
+
+The plugin intelligently handles all project states:
+- ✅ **Fresh projects**: Creates all files from templates
+- ✅ **Existing CLAUDE.md**: Appends ChromaDB section (preserves your content)
+- ✅ **Existing settings.local.json**: Merges ChromaDB config (preserves existing servers)
+- ✅ **Already configured**: Silent exit, no modifications
+
+**Automatic backups created before any modifications** (timestamped `.backup` files)
 
 ## Quick Start
 
