@@ -1,463 +1,578 @@
-# Setup Script vs Plugin Analysis
+# Auto-Setup Script Analysis: Non-Destructive Merge Strategy
 
-**Date**: 2025-10-14
-**Purpose**: Comprehensive comparison of setup-claude-chroma.command and claude-chroma plugin functionality
+**Date**: 2025-10-15  
+**Scope**: Analysis of `/hooks/auto-setup.sh` merge behavior for existing projects
 
----
+## Current Implementation Analysis
 
-## Executive Summary
+### What Works Well
 
-The `claude-chroma.sh` setup script (v3.5.3, 1954 lines) is a comprehensive, production-ready bash tool that performs complete project initialization. The current plugin commands (`/chroma:setup`, `/chroma:validate`, `/chroma:migrate`, `/chroma:stats`) are focused, minimal tools for specific operations.
+1. **.mcp.json Merging** (Lines 37-178)
+   - Uses Python JSON manipulation for proper merging
+   - Preserves existing `mcpServers` entries
+   - Only adds `chroma` server if not present
+   - Fallback to bash heredoc if Python fails
 
-**Gap**: The plugin is missing ~70% of the setup script's functionality, particularly around:
-- Complete directory structure creation
-- Template-based configuration rendering
-- Memory discipline enforcement
-- Documentation generation
-- Backup/rollback system
+2. **Idempotent Checks**
+   - `is_chromadb_configured()` prevents redundant setup
+   - Checks both `.chroma/` directory and `.mcp.json` presence
 
-**Recommendation**: Enhance plugin to preserve all critical setup functionality while maintaining modular command structure.
+### Critical Gaps
 
----
-
-## Setup Script Functionality Analysis
-
-### 1. Prerequisites & Validation (Lines 959-1043)
-
-**What it does**:
-- Verifies `jq` (v1.5+) for JSON operations
-- Checks `python3` availability (fallback operations)
-- **Requires** `uvx` for running ChromaDB MCP server
-- Offers to install `uvx` via pip/pipx if missing
-- Tests ChromaDB MCP server accessibility
-- Detects `claude` CLI (optional)
-
-**Plugin status**: ❌ **MISSING**
-
-### 2. Directory Structure (Lines 1099-1116)
-
-**What it does**:
+#### 1. CLAUDE.md Handling (Lines 184-240)
+**Current Behavior**:
 ```bash
-.chroma/              # ChromaDB data storage
-.chroma/context/      # Context documents for Claude
-claudedocs/           # Project documentation
-bin/                  # Utility scripts
-templates/            # Configuration templates
+if [ ! -f "${PROJECT_ROOT}/CLAUDE.md" ]; then
+    # Create entire CLAUDE.md from scratch
+fi
 ```
 
-**Plugin status**: ⚠️ **PARTIAL** (only creates `.chroma/`)
+**Problem**: If `CLAUDE.md` exists, ChromaDB instructions are NEVER added.
 
-### 3. MCP Configuration (Lines 1136-1216)
+**Impact**: Existing projects with `CLAUDE.md` won't get:
+- ChromaDB memory contract section
+- Chroma schema and call examples
+- Retrieval checklist
+- Memory checkpoint rules
+- Activation instructions
 
-**What it does**:
-- Detects best MCP runner (uvx > chroma-mcp > python3 -m)
-- Generates `.mcp.json` with:
-  - Infinite timeout settings (CHROMA_SERVER_KEEP_ALIVE=0)
-  - Proper environment variables
-  - Initialization options (retryAttempts: 5)
-- Uses **absolute paths** internally for robustness
-- Merges with existing `.mcp.json` if present
-- Validates JSON structure
-- Creates backups before modifications
+#### 2. settings.local.json Handling (Lines 243-271)
+**Current Behavior**:
+```bash
+if [ ! -f "${PROJECT_ROOT}/.claude/settings.local.json" ]; then
+    # Create entire settings.local.json from scratch
+fi
+```
 
-**Plugin status**: ✅ **PRESENT** (basic version)
+**Problem**: If `settings.local.json` exists, ChromaDB config is NEVER merged.
 
-### 4. CLAUDE.md Template Rendering (Lines 1218-1294)
+**Impact**: Existing projects won't get:
+- `"chroma"` added to `enabledMcpjsonServers` array
+- `mcpServers.chroma.alwaysAllow` permissions
+- ChromaDB-specific instructions in `instructions` array
 
-**What it does**:
-- Reads `templates/CLAUDE.md.tpl`
-- Renders with `PROJECT_COLLECTION` variable substitution
-- Uses `envsubst` if available, falls back to `awk`
-- **Validates** content before writing:
-  - Checks for whitespace-only content
-  - Verifies minimum length (10+ chars)
-  - Detects unresolved placeholders like `${VARIABLE_NAME}`
-- Creates timestamped backups of existing CLAUDE.md
-- Preserves original as `CLAUDE.md.original`
+---
 
-**Plugin status**: ❌ **MISSING** (plugin uses hardcoded template)
+## Merge Strategy Design
 
-### 5. Memory Discipline Enforcement (Lines 333-625)
+### Design Principles
 
-**What it does**:
-- **Read-only** checks of global `~/.claude/CLAUDE.md`
-- Detects if memory checkpoint rules exist globally
-- Creates **project-local** `MEMORY_CHECKPOINT_REMINDER.md` if global rules missing
-- **Read-only** checks of global `~/.claude/settings.local.json`
-- Creates/updates **project** `.claude/settings.local.json` with memory instructions
-- **Never modifies global files** (safety-first design)
+1. **Non-Destructive**: Never overwrite existing content
+2. **Idempotent**: Running setup multiple times is safe
+3. **Smart Detection**: Recognize if ChromaDB already configured
+4. **Preserve Ordering**: Maintain existing structure/formatting
+5. **Clear Boundaries**: Mark plugin-added content with comments
+6. **Rollback-Friendly**: Changes are reversible
 
-**Memory instructions added to project settings**:
-```json
-{
-  "instructions": [
-    "Every 5 interactions, check if you have logged recent learnings",
-    "After solving problems or making decisions, immediately log to ChromaDB",
-    "Use mcp__chroma__chroma_add_documents to preserve discoveries",
-    "Query existing memories at session start"
-  ]
+### Edge Cases to Handle
+
+#### CLAUDE.md Scenarios
+
+| Scenario | Current Behavior | Required Behavior |
+|----------|-----------------|-------------------|
+| No CLAUDE.md | Create from template | Create from template ✅ |
+| CLAUDE.md exists, no Chroma section | Skip entirely ❌ | Append Chroma section |
+| CLAUDE.md exists with Chroma section | Skip entirely ✅ | Skip (already configured) |
+| CLAUDE.md exists with different Chroma collection | Skip entirely ❌ | Detect and warn/skip |
+| CLAUDE.md with partial Chroma config | Skip entirely ❌ | Detect gaps and offer merge |
+
+#### settings.local.json Scenarios
+
+| Scenario | Current Behavior | Required Behavior |
+|----------|-----------------|-------------------|
+| No settings.local.json | Create from template | Create from template ✅ |
+| Exists, no `enabledMcpjsonServers` | Skip entirely ❌ | Add array with ["chroma"] |
+| Exists, has `enabledMcpjsonServers: []` | Skip entirely ❌ | Append "chroma" to array |
+| Exists, has `enabledMcpjsonServers: ["other"]` | Skip entirely ❌ | Append "chroma" if missing |
+| Exists, has `enabledMcpjsonServers: ["chroma"]` | Skip entirely ✅ | Skip (already configured) |
+| Exists, no `mcpServers.chroma` | Skip entirely ❌ | Add chroma server config |
+| Exists, has `mcpServers.chroma` | Skip entirely ✅ | Skip (already configured) |
+| Exists, no `instructions` array | Skip entirely ❌ | Add ChromaDB instructions |
+| Exists, has `instructions` array | Skip entirely ❌ | Merge ChromaDB instructions |
+| Existing instructions duplicate plugin instructions | Skip entirely ❌ | Detect and skip duplicates |
+
+---
+
+## Implementation Strategy
+
+### Option A: Python-Based Merge (Recommended)
+
+**Pros**:
+- Proper JSON parsing and manipulation
+- Reliable array merging without duplicates
+- Text block detection and insertion
+- Better error handling
+
+**Cons**:
+- Additional Python dependency
+- Slightly more complex
+
+### Option B: Bash + jq
+
+**Pros**:
+- Standard Unix tools
+- Fast execution
+
+**Cons**:
+- jq might not be installed
+- Complex text manipulation in CLAUDE.md
+- Array merging is verbose
+
+### Option C: Hybrid (Recommended for This Project)
+
+**Strategy**:
+- Use Python for JSON files (settings.local.json)
+- Use bash for text files (CLAUDE.md with marker detection)
+- Fallback to bash heredoc if Python unavailable
+
+**Rationale**: Already using Python for .mcp.json merging successfully
+
+---
+
+## Detailed Implementation Design
+
+### 1. CLAUDE.md Merge Strategy
+
+#### Detection Algorithm
+```bash
+detect_chromadb_in_claudemd() {
+    local claudemd="${PROJECT_ROOT}/CLAUDE.md"
+    
+    # Check if file exists
+    [ ! -f "$claudemd" ] && return 1
+    
+    # Check for ChromaDB markers
+    if grep -q "## 🧠 Project Memory (Chroma)" "$claudemd" || \
+       grep -q "mcp__chroma__chroma_create_collection" "$claudemd" || \
+       grep -q "collection_name.*project_memory" "$claudemd"; then
+        return 0  # ChromaDB section exists
+    fi
+    
+    return 1  # No ChromaDB section
 }
 ```
 
-**Plugin status**: ❌ **MISSING**
+#### Merge Implementation
+```bash
+merge_claudemd_chromadb() {
+    local claudemd="${PROJECT_ROOT}/CLAUDE.md"
+    
+    # Detect if ChromaDB already configured
+    if detect_chromadb_in_claudemd; then
+        echo "   CLAUDE.md already has ChromaDB configuration, skipping..."
+        return 0
+    fi
+    
+    # Create backup
+    cp "$claudemd" "${claudemd}.backup.$(date +%Y%m%d_%H%M%S)"
+    
+    # Append ChromaDB section with clear marker
+    cat >> "$claudemd" << 'CHROMADB_SECTION'
 
-### 6. Documentation Generation (Lines 1353-1461)
+# ═══════════════════════════════════════════════════════════
+# ChromaDB Plugin Configuration (auto-added by claude-chroma)
+# ═══════════════════════════════════════════════════════════
 
-**What it does**:
+## 🧠 Project Memory (Chroma)
+Use server \`chroma\`. Collection \`project_memory\`.
 
-#### .gitignore (Lines 1296-1351)
-- Creates or merges ChromaDB-specific entries
-- Adds `.chroma/`, `*.chroma`, `claudedocs/*.md`
-- Includes Python, OS, and IDE ignores
+Log after any confirmed fix, decision, gotcha, or preference.
 
-#### INIT_INSTRUCTIONS.md (Lines 1353-1423)
-- Automatic setup overview
-- Manual ChromaDB commands (create, query, add)
-- Troubleshooting guide
-- Collection name reference
+**Schema:**
+- **documents**: 1–2 sentences. Under 300 chars.
+- **metadatas**: \`{ "type":"decision|fix|tip|preference", "tags":"comma,separated", "source":"file|PR|spec|issue" }\`
+- **ids**: stable string if updating the same fact.
 
-#### start-claude-chroma.sh (Lines 1425-1461)
-- Validates `.mcp.json` exists and is valid JSON
-- Optional registry bump integration
-- Launches Claude with ChromaDB configuration
+### Chroma Calls
+\`\`\`javascript
+// Create once:
+mcp__chroma__chroma_create_collection { "collection_name": "project_memory" }
 
-**Plugin status**: ❌ **MISSING**
+// Add:
+mcp__chroma__chroma_add_documents {
+  "collection_name": "project_memory",
+  "documents": ["<text>"],
+  "metadatas": [{"type":"<type>","tags":"a,b,c","source":"<src>"}],
+  "ids": ["<stable-id>"]
+}
 
-### 7. Shell Function (Lines 1463-1577, Optional with --full)
+// Query (start with 5; escalate only if <3 strong hits):
+mcp__chroma__chroma_query_documents {
+  "collection_name": "project_memory",
+  "query_texts": ["<query>"],
+  "n_results": 5
+}
+\`\`\`
 
-**What it does**:
-- Adds `claude-chroma()` function to shell RC files
-- Auto-detects `.mcp.json` by walking up directory tree
-- Falls back to regular `claude` if no config found
-- Supports bash, zsh, and fish shells
-- Makes ChromaDB available from any subdirectory
+## 🔍 Retrieval Checklist Before Coding
+1. Query Chroma for related memories.
+2. Check repo files that match the task.
+3. List open PRs or issues that touch the same area.
+4. Only then propose changes.
 
-**Plugin status**: ❌ **MISSING** (not applicable for plugin context)
+## 📝 Memory Checkpoint Rules
 
-### 8. Project Registry (Lines 1779-1798)
+**Every 5 interactions or after completing a task**, pause and check:
+- Did I discover new decisions, fixes, or patterns?
+- Did the user express any preferences?
+- Did I solve tricky problems or learn about architecture?
 
-**What it does**:
-- Maintains `~/.config/claude/chroma_projects.jsonl`
-- Tracks all ChromaDB projects with metadata:
-  ```json
-  {
-    "name": "project_name",
-    "path": "/full/path/to/project",
-    "collection": "project_name_memory",
-    "data_dir": "/path/.chroma",
-    "created_at": "2025-10-14T20:30:00Z",
-    "sessions": 0
-  }
-  ```
-- Used by optional `bin/registry.sh` for tracking usage
+If yes → Log memory IMMEDIATELY using the schema above.
 
-**Plugin status**: ❌ **MISSING**
+**During long sessions (>10 interactions)**:
+- Stop and review: Have I logged recent learnings?
+- Check for unrecorded decisions or fixes
+- Remember: Each memory helps future sessions
 
-### 9. Backup & Rollback System (Lines 96-141, 269-331)
+## ⚡ ChromaDB Activation
+At session start, after reading this file:
+- Query existing memories: \`mcp__chroma__chroma_query_documents\`
+- Announce: **Contract loaded. Using Chroma project_memory.**
 
-**What it does**:
-- Automatic timestamped backups before any modification
-- Tracks all modified files in `TOUCHED_FILES[]` array
-- Prunes old backups (keeps last 5)
-- **Automatic rollback** on any error via trap handlers
-- Special backup handling for CLAUDE.md (preserves user content)
-- Atomic writes using temp files + rename
-- Cleanup of temporary files on exit
+CHROMADB_SECTION
 
-**Plugin status**: ❌ **MISSING**
-
-### 10. Migration Support (Lines 1581-1683)
-
-**What it does**:
-- Detects v3.0/3.1 incompatible configurations
-- Migrates from `.claude/settings.local.json` to new structure
-- Updates broken shell functions from old versions
-- Validates and updates timeout settings in existing `.mcp.json`
-
-**Plugin status**: ⚠️ **PARTIAL** (/chroma:migrate handles external volumes only)
-
-### 11. Safety & Validation (Lines 60-265)
-
-**What it does**:
-- `set -Eeuo pipefail` for strict error handling
-- Input sanitization (removes command injection risks)
-- Path validation (blocks `$`, backticks, directory traversal)
-- Project name validation (alphanumeric + dots/underscores/hyphens)
-- Realpath resolution with multiple fallbacks
-- **assert_within()** - ensures paths don't escape project root
-
-**Plugin status**: ⚠️ **PARTIAL** (Claude provides some safety, but no explicit path sandboxing)
-
-### 12. Advanced Features
-
-**Dry-run mode** (Lines 273-656 passim):
-- Preview all changes without applying
-- Shows what would be created/modified
-- Useful for understanding script behavior
-
-**Non-interactive mode** (Lines 933-954):
-- Environment variables: `NON_INTERACTIVE=1`, `ASSUME_YES=1`
-- Automatic yes/no responses
-- Silent operation for CI/CD
-
-**Debug mode** (Lines 168-170, 817-819):
-- Verbose logging of all operations
-- Shows internal state and decisions
-- Helps troubleshooting
-
-**Plugin status**: ❌ **MISSING**
-
----
-
-## Plugin Command Analysis
-
-### Current Commands
-
-#### /chroma:setup (commands/setup.md)
-**Coverage**: ~20% of setup script
-
-**What it does**:
-✅ Creates `.chroma/` directory
-✅ Creates/merges `.mcp.json` with ChromaDB config
-✅ Tests MCP connection
-⚠️ Creates basic CLAUDE.md (not from template)
-
-**What it's missing**:
-❌ Prerequisites check (uvx, jq)
-❌ Complete directory structure (.chroma/context, claudedocs, bin, templates)
-❌ Template rendering with variable substitution
-❌ Memory discipline setup
-❌ Documentation generation
-❌ Backup system
-❌ .gitignore creation
-
-#### /chroma:validate (commands/validate.md)
-**Coverage**: Unique functionality (path validation focus)
-
-**What it does**:
-✅ Validates `.mcp.json` structure
-✅ Checks data directory path exists
-✅ Detects external volumes (`/Volumes/*`)
-✅ Tests MCP connection
-✅ Generates validation report
-
-**Comparison**: This is **plugin-specific** functionality not in setup script. Good addition!
-
-#### /chroma:migrate (commands/migrate.md)
-**Coverage**: Overlaps with setup script's migration, but different focus
-
-**What it does**:
-✅ Migrates from external volumes to local storage
-✅ Uses rsync for safe copying
-✅ Updates `.mcp.json` with new path
-✅ Validates migration success
-
-**Setup script equivalent**: Lines 1581-1683 (version migration, not path migration)
-
-**Comparison**: Plugin adds **path migration**, setup script has **version migration**. Both needed!
-
-#### /chroma:stats (commands/stats.md)
-**Coverage**: Unique functionality (monitoring focus)
-
-**What it does**:
-✅ Shows ChromaDB statistics
-✅ Lists collections with document counts
-✅ Displays storage metrics
-✅ Health checks
-
-**Comparison**: This is **plugin-specific** functionality. Excellent addition for ongoing maintenance!
-
----
-
-## Gap Analysis Summary
-
-### Critical Gaps (Must Fix)
-
-| Feature | Setup Script | Plugin | Priority |
-|---------|--------------|--------|----------|
-| Prerequisites check | ✅ Comprehensive | ❌ Missing | 🔴 HIGH |
-| Directory structure | ✅ Complete | ⚠️ Partial | 🔴 HIGH |
-| Template rendering | ✅ With validation | ❌ Missing | 🔴 HIGH |
-| Memory discipline | ✅ Comprehensive | ❌ Missing | 🔴 HIGH |
-| .gitignore setup | ✅ Creates/merges | ❌ Missing | 🔴 HIGH |
-| Backup system | ✅ Automatic | ❌ Missing | 🔴 HIGH |
-
-### Important Gaps (Should Fix)
-
-| Feature | Setup Script | Plugin | Priority |
-|---------|--------------|--------|----------|
-| Documentation | ✅ INIT_INSTRUCTIONS.md | ❌ Missing | 🟡 MEDIUM |
-| Launcher script | ✅ start-claude-chroma.sh | ❌ Missing | 🟡 MEDIUM |
-| Version migration | ✅ From v3.x | ⚠️ Path only | 🟡 MEDIUM |
-| Project registry | ✅ Maintains | ❌ Missing | 🟡 MEDIUM |
-
-### Non-Critical Gaps (Nice to Have)
-
-| Feature | Setup Script | Plugin | Priority |
-|---------|--------------|--------|----------|
-| Shell function | ✅ Optional | ❌ Missing | 🟢 LOW |
-| Dry-run mode | ✅ Full support | ❌ Missing | 🟢 LOW |
-| Non-interactive | ✅ CI/CD ready | ❌ N/A | 🟢 LOW |
-
-### Plugin Advantages
-
-| Feature | Setup Script | Plugin | Benefit |
-|---------|--------------|--------|---------|
-| Path validation | ⚠️ Basic | ✅ Comprehensive | Detects external volumes |
-| Statistics | ❌ Missing | ✅ Detailed | Ongoing monitoring |
-| Interactive help | ⚠️ CLI only | ✅ Context-aware | Better UX |
-| Live troubleshooting | ❌ N/A | ✅ Claude-assisted | Real-time fixes |
-
----
-
-## Recommendations
-
-### 1. Plugin Enhancement Strategy
-
-**Modular Command Structure** (maintain separation of concerns):
-
-```
-/chroma:prerequisites  - Check dependencies (jq, uvx, python3)
-/chroma:setup          - Core setup (enhanced from current)
-/chroma:docs           - Generate documentation files
-/chroma:validate       - Validate configuration (keep current)
-/chroma:migrate        - Migrate data/versions (enhance current)
-/chroma:stats          - Show statistics (keep current)
+    echo "   ✅ Appended ChromaDB configuration to CLAUDE.md"
+}
 ```
 
-### 2. Enhanced /chroma:setup Command
+### 2. settings.local.json Merge Strategy
 
-Update `commands/setup.md` to include:
+#### Python Merge Script
+```python
+#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
 
-1. **Prerequisites Check**
-   - Verify `uvx` installed (required)
-   - Verify `jq` installed (required for JSON operations)
-   - Check `python3` (optional, for fallbacks)
+def merge_chromadb_settings(settings_path):
+    """Non-destructively merge ChromaDB config into settings.local.json"""
+    
+    # Load existing settings
+    with open(settings_path, 'r') as f:
+        settings = json.load(f)
+    
+    modified = False
+    
+    # 1. Merge enabledMcpjsonServers
+    if 'enabledMcpjsonServers' not in settings:
+        settings['enabledMcpjsonServers'] = []
+        modified = True
+    
+    if 'chroma' not in settings['enabledMcpjsonServers']:
+        settings['enabledMcpjsonServers'].append('chroma')
+        modified = True
+    
+    # 2. Merge mcpServers.chroma config
+    if 'mcpServers' not in settings:
+        settings['mcpServers'] = {}
+        modified = True
+    
+    if 'chroma' not in settings['mcpServers']:
+        settings['mcpServers']['chroma'] = {
+            'alwaysAllow': [
+                'chroma_list_collections',
+                'chroma_create_collection',
+                'chroma_add_documents',
+                'chroma_query_documents',
+                'chroma_get_documents'
+            ]
+        }
+        modified = True
+    
+    # 3. Merge instructions array
+    chromadb_instructions = [
+        'IMPORTANT: This project uses ChromaDB for persistent memory',
+        'Every 5 interactions, check if you have logged recent learnings',
+        'After solving problems or making decisions, immediately log to ChromaDB',
+        'Use mcp__chroma__chroma_add_documents to preserve discoveries',
+        'Query existing memories at session start with mcp__chroma__chroma_query_documents',
+        'Each memory should be under 300 chars with appropriate metadata',
+        'Log architecture decisions, user preferences, fixes, and patterns'
+    ]
+    
+    if 'instructions' not in settings:
+        settings['instructions'] = []
+        modified = True
+    
+    # Add ChromaDB instructions if not already present
+    for instruction in chromadb_instructions:
+        # Check for similar instruction (fuzzy match)
+        if not any(instruction.lower() in existing.lower() 
+                  for existing in settings['instructions']):
+            settings['instructions'].append(instruction)
+            modified = True
+    
+    # Save if modified
+    if modified:
+        # Create backup
+        backup_path = f"{settings_path}.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        shutil.copy2(settings_path, backup_path)
+        
+        # Write merged settings
+        with open(settings_path, 'w') as f:
+            json.dump(settings, f, indent=2)
+        
+        return True  # Modified
+    
+    return False  # No changes needed
+```
 
-2. **Complete Directory Structure**
+#### Bash Wrapper
+```bash
+merge_settings_json() {
+    local settings_path="${PROJECT_ROOT}/.claude/settings.local.json"
+    
+    # If doesn't exist, create from template
+    if [ ! -f "$settings_path" ]; then
+        cat > "$settings_path" << 'SETTINGS'
+{
+  "enabledMcpjsonServers": ["chroma"],
+  "mcpServers": {
+    "chroma": {
+      "alwaysAllow": [
+        "chroma_list_collections",
+        "chroma_create_collection",
+        "chroma_add_documents",
+        "chroma_query_documents",
+        "chroma_get_documents"
+      ]
+    }
+  },
+  "instructions": [
+    "IMPORTANT: This project uses ChromaDB for persistent memory",
+    "Every 5 interactions, check if you have logged recent learnings",
+    "After solving problems or making decisions, immediately log to ChromaDB",
+    "Use mcp__chroma__chroma_add_documents to preserve discoveries",
+    "Query existing memories at session start with mcp__chroma__chroma_query_documents",
+    "Each memory should be under 300 chars with appropriate metadata",
+    "Log architecture decisions, user preferences, fixes, and patterns"
+  ]
+}
+SETTINGS
+        echo "   ✅ Created settings.local.json"
+        return 0
+    fi
+    
+    # Exists, merge using Python
+    python3 << 'PYTHON_MERGE'
+import json
+import sys
+from datetime import datetime
+import shutil
+
+settings_path = "${settings_path}"
+
+with open(settings_path, 'r') as f:
+    settings = json.load(f)
+
+modified = False
+
+# Merge enabledMcpjsonServers
+if 'enabledMcpjsonServers' not in settings:
+    settings['enabledMcpjsonServers'] = []
+    modified = True
+
+if 'chroma' not in settings['enabledMcpjsonServers']:
+    settings['enabledMcpjsonServers'].append('chroma')
+    modified = True
+
+# Merge mcpServers.chroma
+if 'mcpServers' not in settings:
+    settings['mcpServers'] = {}
+    modified = True
+
+if 'chroma' not in settings['mcpServers']:
+    settings['mcpServers']['chroma'] = {
+        'alwaysAllow': [
+            'chroma_list_collections',
+            'chroma_create_collection',
+            'chroma_add_documents',
+            'chroma_query_documents',
+            'chroma_get_documents'
+        ]
+    }
+    modified = True
+
+# Merge instructions
+chromadb_instructions = [
+    'IMPORTANT: This project uses ChromaDB for persistent memory',
+    'Every 5 interactions, check if you have logged recent learnings',
+    'After solving problems or making decisions, immediately log to ChromaDB',
+    'Use mcp__chroma__chroma_add_documents to preserve discoveries',
+    'Query existing memories at session start with mcp__chroma__chroma_query_documents',
+    'Each memory should be under 300 chars with appropriate metadata',
+    'Log architecture decisions, user preferences, fixes, and patterns'
+]
+
+if 'instructions' not in settings:
+    settings['instructions'] = []
+    modified = True
+
+for instruction in chromadb_instructions:
+    if not any(instruction.lower() in existing.lower() 
+              for existing in settings.get('instructions', [])):
+        settings['instructions'].append(instruction)
+        modified = True
+
+if modified:
+    # Create backup
+    import shutil
+    from datetime import datetime
+    backup_path = f"{settings_path}.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    shutil.copy2(settings_path, backup_path)
+    
+    # Write merged
+    with open(settings_path, 'w') as f:
+        json.dump(settings, f, indent=2)
+    
+    print("MODIFIED")
+else:
+    print("UNCHANGED")
+PYTHON_MERGE
+
+    if [ $? -eq 0 ]; then
+        echo "   ✅ Merged ChromaDB config into settings.local.json"
+    else
+        echo "   ⚠️  Failed to merge settings.local.json (Python error)"
+    fi
+}
+```
+
+---
+
+## Risk Assessment
+
+### Low Risk
+- .mcp.json merging (already working well)
+- New project setup (no existing files)
+
+### Medium Risk
+- CLAUDE.md appending (text format, but clear markers)
+- Duplicate instruction detection (fuzzy matching needed)
+
+### High Risk
+- settings.local.json merging with existing permissions arrays
+- Existing non-standard CLAUDE.md structures
+- UTF-8 encoding issues in CLAUDE.md
+
+### Mitigation Strategies
+
+1. **Always Create Backups**
+   ```bash
+   cp "$file" "${file}.backup.$(date +%Y%m%d_%H%M%S)"
    ```
-   .chroma/
-   .chroma/context/
-   claudedocs/
-   bin/
-   templates/
+
+2. **Clear Markers for Plugin Content**
+   ```markdown
+   # ═══════════════════════════════════════════════════════════
+   # ChromaDB Plugin Configuration (auto-added by claude-chroma)
+   # ═══════════════════════════════════════════════════════════
    ```
 
-3. **Template-Based CLAUDE.md**
-   - Read from `templates/CLAUDE.md.tpl`
-   - Substitute `${PROJECT_COLLECTION}` variable
-   - Validate before writing (non-empty, no unresolved vars)
-   - Backup existing CLAUDE.md to .original
+3. **Detect Before Merge**
+   - Check for existing ChromaDB configuration before any modifications
+   - Use multiple detection heuristics (keywords, structure, markers)
 
-4. **Memory Discipline Setup**
-   - Check global `~/.claude/CLAUDE.md` (read-only)
-   - Create project `.claude/settings.local.json` with memory instructions
-   - Create `MEMORY_CHECKPOINT_REMINDER.md` if needed
+4. **Idempotent Operations**
+   - Running setup multiple times should not duplicate content
+   - Array merging uses set semantics (no duplicates)
 
-5. **.gitignore Management**
-   - Create or merge ChromaDB entries
-   - Add `.chroma/`, `*.chroma`, `claudedocs/*.md`
-
-6. **Backup Before Modifications**
-   - Timestamp all backups
-   - Track modified files for reporting
-   - Note: Claude doesn't need full rollback (user can undo)
-
-### 3. New /chroma:prerequisites Command
-
-Create `commands/prerequisites.md`:
-- Check all required dependencies
-- Offer installation instructions for missing tools
-- Validate versions (jq 1.5+)
-- Test ChromaDB MCP server accessibility
-
-### 4. New /chroma:docs Command
-
-Create `commands/docs.md`:
-- Generate `INIT_INSTRUCTIONS.md`
-- Create `start-claude-chroma.sh` launcher
-- Generate `MEMORY_CHECKPOINT_REMINDER.md`
-- Update `.gitignore`
-
-### 5. Keep Setup Script For
-
-These features should remain in setup script only:
-- Shell function installer (modifies global shell RC files)
-- Project registry (global state management)
-- Non-interactive/CI mode (not applicable to plugin)
-- Dry-run mode (plugin is inherently preview-based with Claude)
+5. **Fail-Safe Defaults**
+   - If Python fails, skip merge and warn user
+   - Never partially modify files on error
 
 ---
 
-## Integration Guide
+## Testing Strategy
 
-### When to Use Setup Script
+### Test Matrix
 
-✅ **Initial project setup** - Run once to configure everything
-✅ **CI/CD automation** - Non-interactive mode for builds
-✅ **Offline setup** - No Claude connection required
-✅ **Shell function** - Installing global `claude-chroma()` function
-✅ **Batch operations** - Setting up multiple projects
+| Test Case | CLAUDE.md State | settings.local.json State | Expected Outcome |
+|-----------|----------------|---------------------------|------------------|
+| Fresh Project | Missing | Missing | Create both from templates |
+| Partial Setup | Missing | Exists (no chroma) | Create CLAUDE.md, merge settings |
+| Partial Setup | Exists (no chroma) | Missing | Append CLAUDE.md, create settings |
+| Partial Setup | Exists (no chroma) | Exists (no chroma) | Append CLAUDE.md, merge settings |
+| Already Configured | Exists (has chroma) | Exists (has chroma) | Skip both (idempotent) |
+| Mixed Config | Exists (has chroma) | Exists (no chroma) | Skip CLAUDE.md, merge settings |
+| Corrupted Config | Invalid format | Invalid JSON | Backup and recreate |
 
-**Command**: `./claude-chroma.sh [project-name] [project-path]`
+### Validation Commands
 
-### When to Use Plugin Commands
+```bash
+# Test detection
+bash -c "source hooks/auto-setup.sh; detect_chromadb_in_claudemd"
 
-✅ **Ongoing maintenance** - Updates and configuration changes
-✅ **Troubleshooting** - Path validation, connection issues
-✅ **Interactive setup** - With Claude's context and guidance
-✅ **Migration** - Moving from external volumes to local
-✅ **Monitoring** - Statistics and health checks
-✅ **Documentation** - Regenerating docs after changes
+# Test full setup on new project
+mkdir -p /tmp/test-project && cd /tmp/test-project
+bash /path/to/auto-setup.sh
 
-**Commands**: `/chroma:setup`, `/chroma:validate`, `/chroma:migrate`, `/chroma:stats`
+# Test merge on existing project
+cd /tmp/test-project-with-claudemd
+bash /path/to/auto-setup.sh
 
-### Hybrid Workflow (Recommended)
-
-1. **Initial Setup**: Run `./claude-chroma.sh` for comprehensive setup
-2. **Daily Use**: Use `/chroma:validate` to check health
-3. **Troubleshooting**: Use `/chroma:migrate` if paths break
-4. **Monitoring**: Use `/chroma:stats` to track usage
-5. **Updates**: Use enhanced `/chroma:setup` to refresh config
-
----
-
-## Migration Path
-
-### Phase 1: Critical Enhancements (Week 1)
-- [ ] Update `/chroma:setup` with prerequisites check
-- [ ] Add complete directory structure creation
-- [ ] Implement template-based CLAUDE.md rendering
-- [ ] Add memory discipline setup
-- [ ] Create .gitignore management
-
-### Phase 2: Documentation (Week 2)
-- [ ] Create `/chroma:prerequisites` command
-- [ ] Create `/chroma:docs` command
-- [ ] Add backup notifications to setup
-- [ ] Update all command docs
-
-### Phase 3: Testing & Validation (Week 3)
-- [ ] Test plugin achieves same results as script
-- [ ] Validate all file contents match
-- [ ] Verify ChromaDB connections work identically
-- [ ] Document edge cases and limitations
+# Verify idempotency
+bash /path/to/auto-setup.sh  # Run twice
+diff CLAUDE.md CLAUDE.md.backup.*  # Should be identical
+```
 
 ---
 
-## Test Plan
+## Implementation Roadmap
 
-See `TEST_PLAN.md` for comprehensive testing checklist comparing setup script and plugin results.
+### Phase 1: Enhanced Detection (Low Risk)
+- Add `detect_chromadb_in_claudemd()` function
+- Add `detect_chromadb_in_settings()` function
+- Test detection on various file formats
+
+### Phase 2: CLAUDE.md Merge (Medium Risk)
+- Implement `merge_claudemd_chromadb()` with markers
+- Add backup creation
+- Test append logic with existing files
+
+### Phase 3: settings.local.json Merge (Medium-High Risk)
+- Create Python merge script
+- Implement bash wrapper with fallback
+- Test JSON merging on various existing configs
+
+### Phase 4: Integration & Testing (Critical)
+- Update main `setup_chromadb()` function
+- Create comprehensive test suite
+- Document merge behavior in README
+
+### Phase 5: User Communication
+- Add clear output messages for each merge action
+- Warn users when manual review recommended
+- Document rollback procedures
+
+---
+
+## Recommended Implementation Order
+
+1. **Read Existing Files First** (10 lines of bash)
+2. **Detection Functions** (30 lines of bash)
+3. **CLAUDE.md Merge** (50 lines of bash)
+4. **settings.local.json Merge** (80 lines of Python + bash wrapper)
+5. **Update main setup_chromadb()** (20 lines refactor)
+6. **Testing & Validation** (separate test script)
+
+**Total Estimated LOC**: ~200 lines (mostly Python for JSON handling)
 
 ---
 
 ## Conclusion
 
-The setup script and plugin should coexist as complementary tools:
+**Current Status**: Auto-setup script is non-destructive for .mcp.json but ignores existing CLAUDE.md and settings.local.json entirely.
 
-- **Setup Script**: Comprehensive, automated, battle-tested initial configuration
-- **Plugin Commands**: Interactive, context-aware, ongoing maintenance and troubleshooting
+**Recommended Approach**: Hybrid Python/Bash merge strategy with:
+- Clear detection before merge
+- Backup creation for safety
+- Marker-based content insertion
+- Idempotent operations
+- Comprehensive testing
 
-By enhancing the plugin to preserve critical setup functionality while maintaining its modular structure, we get the best of both worlds: automated setup for efficiency, interactive commands for flexibility.
+**Risk Level**: Medium (manageable with proper testing and backups)
 
-**Next Steps**: Implement Phase 1 enhancements to `/chroma:setup` command.
+**Implementation Complexity**: Moderate (most complexity in JSON merging, which has precedent in existing .mcp.json logic)
+
+**User Impact**: High positive impact (enables plugin use with existing projects without manual configuration)
