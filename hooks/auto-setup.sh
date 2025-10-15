@@ -180,13 +180,13 @@ with open('$MCP_CONFIG', 'w') as f:
     json.dump(config, f, indent=2)
 " 2>/dev/null || {
                 # Python failed, create simple config
-                cat > "$MCP_CONFIG" << 'EOF'
+                cat > "$MCP_CONFIG" <<EOF
 {
   "mcpServers": {
     "chroma": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["-qq", "chroma-mcp", "--client-type", "persistent", "--data-dir", "${CHROMA_DIR}"],
+      "args": ["-qq", "chroma-mcp", "--client-type", "persistent", "--data-dir", "$CHROMA_DIR"],
       "env": {
         "ANONYMIZED_TELEMETRY": "FALSE",
         "PYTHONUNBUFFERED": "1",
@@ -202,7 +202,7 @@ EOF
             }
         else
             # No mcpServers key, create from scratch
-            cat > "$MCP_CONFIG" << EOF
+            cat > "$MCP_CONFIG" <<EOF
 {
   "mcpServers": {
     "chroma": {
@@ -224,7 +224,7 @@ EOF
         fi
     else
         # Create new .mcp.json
-        cat > "$MCP_CONFIG" << EOF
+        cat > "$MCP_CONFIG" <<EOF
 {
   "mcpServers": {
     "chroma": {
