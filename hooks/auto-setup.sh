@@ -180,9 +180,9 @@ EOF
     # Create .claude directory structure
     mkdir -p "${PROJECT_ROOT}/.claude"
 
-    # Create CLAUDE.md if it doesn't exist
-    if [ ! -f "${PROJECT_ROOT}/.claude/CLAUDE.md" ]; then
-        cat > "${PROJECT_ROOT}/.claude/CLAUDE.md" << 'CLAUDEMD'
+    # Create CLAUDE.md in project root if it doesn't exist
+    if [ ! -f "${PROJECT_ROOT}/CLAUDE.md" ]; then
+        cat > "${PROJECT_ROOT}/CLAUDE.md" << 'CLAUDEMD'
 # CLAUDE.md — Project Memory Contract
 
 **Purpose**: Follow this in every session for this repo. Keep memory sharp. Keep outputs concrete. Cut rework.
@@ -253,7 +253,16 @@ CLAUDEMD
         "chroma_get_documents"
       ]
     }
-  }
+  },
+  "instructions": [
+    "IMPORTANT: This project uses ChromaDB for persistent memory",
+    "Every 5 interactions, check if you have logged recent learnings",
+    "After solving problems or making decisions, immediately log to ChromaDB",
+    "Use mcp__chroma__chroma_add_documents to preserve discoveries",
+    "Query existing memories at session start with mcp__chroma__chroma_query_documents",
+    "Each memory should be under 300 chars with appropriate metadata",
+    "Log architecture decisions, user preferences, fixes, and patterns"
+  ]
 }
 SETTINGS
     fi
@@ -261,7 +270,7 @@ SETTINGS
     echo "✅ ChromaDB configured successfully!"
     echo "   Data directory: $CHROMA_DIR"
     echo "   MCP config: $MCP_CONFIG"
-    echo "   Claude config: ${PROJECT_ROOT}/.claude/CLAUDE.md"
+    echo "   Claude config: ${PROJECT_ROOT}/CLAUDE.md"
     echo "   Settings: ${PROJECT_ROOT}/.claude/settings.local.json"
     echo ""
     echo "📝 CLAUDE.md instructs Claude to use ChromaDB for project memory."
