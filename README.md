@@ -1,6 +1,6 @@
-# Claude Chroma Plugin
+# Claude Chroma
 
-**ChromaDB MCP server management plugin with path validation, migration utilities, and best practices enforcement for persistent AI memory.**
+**Easy ChromaDB MCP setup for Claude Code with two installation options: one-click installer or modular plugin. Includes path validation, migration utilities, and best practices enforcement for persistent AI memory.**
 
 ## Overview
 
@@ -29,7 +29,27 @@ If Python is not available, the plugin will display a clear error message with i
 
 ## Installation
 
-**One command. That's it.**
+Choose the method that works best for you:
+
+### 🚀 Option 1: One-Click Installer (Easiest)
+
+**Perfect for beginners or quick setup.** Just download and double-click!
+
+1. **Download** [`setup-claude-chroma.command`](https://github.com/btangonan/claude-chroma/releases/latest/download/setup-claude-chroma.command)
+2. **Double-click** the file in your project directory
+3. **Done!** ChromaDB is configured automatically
+
+**Features:**
+- ✅ Zero dependencies (self-bootstraps everything)
+- ✅ Works offline (embedded assets)
+- ✅ Colorful, friendly output
+- ✅ Creates launcher script for easy access
+- ✅ Preserves existing CLAUDE.md
+- ✅ Perfect for one-off projects
+
+### 🔌 Option 2: Plugin (Recommended for Power Users)
+
+**Best for developers who manage multiple projects.** Easy updates and modular design.
 
 ```bash
 /plugin marketplace add btangonan/claude-chroma-marketplace
@@ -38,7 +58,28 @@ If Python is not available, the plugin will display a clear error message with i
 
 **Repository:** [https://github.com/btangonan/claude-chroma](https://github.com/btangonan/claude-chroma)
 
-**Done!** ChromaDB is automatically configured when you start Claude Code.
+**Features:**
+- ✅ Easy updates with `/plugin update`
+- ✅ Auto-runs on project start
+- ✅ Additional management commands
+- ✅ Path validation hooks
+- ✅ Migration utilities
+- ✅ Statistics dashboard
+
+### Comparison
+
+| Feature | One-Click Installer | Plugin |
+|---------|-------------------|--------|
+| **Setup Steps** | Download + Double-click | Two commands |
+| **Dependencies** | None (self-bootstraps) | Python 3 required |
+| **Updates** | Re-download file | `/plugin update` |
+| **Auto-activation** | Manual per project | Automatic on startup |
+| **Management Tools** | Basic | Full suite (`/chroma:*`) |
+| **Best For** | Quick setup, beginners | Multiple projects, power users |
+
+---
+
+**Both methods create the same ChromaDB configuration.** Choose based on your workflow!
 
 The plugin automatically:
 - ✅ Creates `.chroma/` directory in your project root
@@ -50,6 +91,8 @@ The plugin automatically:
 - ✅ **Project portability**: Auto-updates paths when you move project folders
 
 **No manual setup required.** Just install and start using the commands below.
+
+> **Note:** Plugin-specific features below apply to Option 2 (Plugin). The one-click installer creates the same ChromaDB setup but without the additional management commands.
 
 ### Works with Existing Projects
 
